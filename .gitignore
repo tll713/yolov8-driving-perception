@@ -65,7 +65,8 @@ dmypy.json
 # Jupyter and editor files
 .ipynb_checkpoints/
 .idea/
-.vs/
+
+.main
 .vscode/
 .DS_Store
 tempCodeRunnerFile.py
