@@ -8,7 +8,13 @@ from backend.routes.models import models_bp
 
 
 def create_app():
-    app = Flask(__name__)
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    app = Flask(
+        __name__,
+        template_folder=str(root / "templates"),
+        static_folder=str(root / "static"),
+    )
     ensure_runtime_directories()
 
     app.register_blueprint(health_bp, url_prefix="/api")
@@ -24,6 +30,16 @@ def create_app():
 
     @app.get("/")
     def index():
+        from flask import render_template
+        return render_template('index.html')
+
+    @app.get("/test")
+    def test_page():
+        from flask import render_template
+        return render_template('test.html')
+
+    @app.get("/api")
+    def api_index():
         return jsonify(
             build_success_response(
                 {

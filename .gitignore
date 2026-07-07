@@ -81,3 +81,21 @@ models/*.onnx
 !results/.gitkeep
 !logs/.gitkeep
 !models/.gitkeep
+
+# Node.js
+node_modules/
+.npm-cache/
+package.json
+package-lock.json
+
+# IDE / CodeArts
+.arts/
+
+# Flask server logs
+server.log
+server_err.log
+flask_stdout.log
+flask_stderr.log
+
+# Test / debug pages
+templates/test.html
