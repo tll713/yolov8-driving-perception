@@ -1,0 +1,83 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*$py.class
+
+# Virtual environments
+.Python
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Build and package output
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Test and coverage output
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Flask and local config
+instance/
+.webassets-cache
+.env
+.envrc
+local_settings.py
+
+# Type check and lint cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter and editor files
+.ipynb_checkpoints/
+.idea/
+.vs/
+.vscode/
+.DS_Store
+tempCodeRunnerFile.py
+
+# Project runtime files
+uploads/*
+results/*
+logs/*
+models/*.pt
+models/*.onnx
+
+!uploads/.gitkeep
+!results/.gitkeep
+!logs/.gitkeep
+!models/.gitkeep

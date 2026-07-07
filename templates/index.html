@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>YOLOv8 自动驾驶场景目标检测</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="panel">
+        <h1>自动驾驶场景目标检测与风险提示系统</h1>
+        <p>上传道路场景图片，系统将调用 YOLOv8 进行目标检测，并输出风险提示。</p>
+        <form id="detectForm">
+          <input id="fileInput" name="file" type="file" accept="image/*,video/*" required>
+          <button type="submit">开始检测</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>检测结果</h2>
+        <pre id="resultBox">等待上传文件...</pre>
+      </section>
+    </main>
+    <script src="/static/js/main.js"></script>
+  </body>
+</html>
