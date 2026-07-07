@@ -1,10 +1,22 @@
-const { createApp, ref, reactive, computed } = Vue
+const { ref, watch, nextTick, computed } = Vue
+
+const RISK_STYLE_MAP = {
+    high: { label: '高风险', cls: 'risk-high' },
+    medium: { label: '中风险', cls: 'risk-medium' },
+    info: { label: '信息', cls: 'risk-info' },
+    low: { label: '低风险', cls: 'risk-low' },
+}
 
 const AppHeader = {
     props: {
-        isAdmin: Boolean
+        healthStatus: Object,
+        modelInfo: Object
     },
-    emits: ['toggleAdmin'],
+    computed: {
+        statusText() {
+            return this.healthStatus?.status === 'ok' ? '系统就绪' : '连接中...'
+        }
+    },
     template: `
     <header class="header">
         <div class="header-inner">
@@ -16,12 +28,13 @@ const AppHeader = {
                 </div>
                 <div class="logo-text">
                     <h1>自动驾驶感知系统</h1>
-                    <span class="logo-sub">YOLOv8 Object Detection & Risk Assessment</span>
+                    <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.classes?.length || 0 }} 类</span>
+                    <span class="logo-sub" v-else>YOLOv8 Object Detection & Risk Assessment</span>
                 </div>
             </div>
             <div class="header-status">
                 <span class="status-dot"></span>
-                <span class="status-text">系统就绪</span>
+                <span class="status-text">{{ statusText }}</span>
             </div>
         </div>
     </header>
@@ -31,10 +44,9 @@ const AppHeader = {
 const ControlPanel = {
     props: {
         hasFile: Boolean,
-        isDetecting: Boolean,
-        threshold: Number
+        isDetecting: Boolean
     },
-    emits: ['update:threshold', 'fileSelected', 'detect', 'clear'],
+    emits: ['fileSelected', 'detect', 'clear'],
     setup(props, { emit }) {
         const fileName = ref('未选择文件')
         const isDragOver = ref(false)
@@ -43,32 +55,17 @@ const ControlPanel = {
             fileName.value = file.name
             emit('fileSelected', file)
         }
-
         function onFileChange(e) {
             const file = e.target.files[0]
             if (file) handleFile(file)
         }
-
-        function onDragOver(e) {
-            e.preventDefault()
-            isDragOver.value = true
-        }
-
-        function onDragLeave() {
-            isDragOver.value = false
-        }
-
+        function onDragOver(e) { e.preventDefault(); isDragOver.value = true }
+        function onDragLeave() { isDragOver.value = false }
         function onDrop(e) {
-            e.preventDefault()
-            isDragOver.value = false
+            e.preventDefault(); isDragOver.value = false
             const file = e.dataTransfer.files[0]
             if (file) handleFile(file)
         }
-
-        function onThresholdChange(e) {
-            emit('update:threshold', parseFloat(e.target.value))
-        }
-
         function onClear() {
             fileName.value = '未选择文件'
             const input = document.getElementById('fileInput')
@@ -76,19 +73,14 @@ const ControlPanel = {
             emit('clear')
         }
 
-        return { fileName, isDragOver, onFileChange, onDragOver, onDragLeave, onDrop, onThresholdChange, onClear }
+        return { fileName, isDragOver, onFileChange, onDragOver, onDragLeave, onDrop, onClear }
     },
     template: `
     <section class="controls-panel">
         <div class="controls-row">
-            <div
-                class="upload-zone"
-                :class="{ 'drag-over': isDragOver }"
-                @dragover="onDragOver"
-                @dragleave="onDragLeave"
-                @drop="onDrop"
-                @click="$el.querySelector('input[type=file]').click()"
-            >
+            <div class="upload-zone" :class="{ 'drag-over': isDragOver }"
+                @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
+                @click="$el.querySelector('input[type=file]').click()">
                 <div class="upload-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -100,18 +92,9 @@ const ControlPanel = {
                     <span class="upload-title">拖放文件或点击上传</span>
                     <span class="upload-hint">支持 JPG / PNG / MP4 / AVI</span>
                 </div>
-                <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.mp4,.avi" @change="onFileChange" @click.stop>
+                <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.bmp,.webp,.mp4,.avi,.mov,.mkv" @change="onFileChange" @click.stop>
                 <span class="file-name">{{ fileName }}</span>
             </div>
-
-            <div class="param-group">
-                <label class="param-label">
-                    置信度阈值
-                    <span class="param-value">{{ threshold.toFixed(2) }}</span>
-                </label>
-                <input type="range" min="0.1" max="0.9" step="0.05" :value="threshold" class="slider" @input="onThresholdChange">
-            </div>
-
             <div class="action-group">
                 <button class="btn btn-primary" :disabled="!hasFile || isDetecting" @click="$emit('detect')">
                     <svg v-if="!isDetecting" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -133,9 +116,48 @@ const DisplayArea = {
     props: {
         filePreviewUrl: String,
         fileType: String,
-        resultImageUrl: String,
+        detections: Array,
         isDetecting: Boolean,
         showBadge: Boolean
+    },
+    setup(props) {
+        const canvasRef = ref(null)
+
+        watch(() => props.detections, () => {
+            if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
+                nextTick(() => drawBoxes())
+            }
+        })
+
+        function drawBoxes() {
+            const canvas = canvasRef.value
+            if (!canvas) return
+            const ctx = canvas.getContext('2d')
+            const img = new Image()
+            img.onload = () => {
+                canvas.width = img.width
+                canvas.height = img.height
+                ctx.drawImage(img, 0, 0)
+                props.detections.forEach(d => {
+                    const [x1, y1, x2, y2] = d.bbox
+                    const risk = d.risk || {}
+                    const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
+                    ctx.strokeStyle = color
+                    ctx.lineWidth = 2
+                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+                    const label = d.class_name + ' ' + (d.confidence * 100).toFixed(0) + '%'
+                    ctx.font = '14px JetBrains Mono, monospace'
+                    const tw = ctx.measureText(label).width
+                    ctx.fillStyle = color
+                    ctx.fillRect(x1, y1 - 20, tw + 10, 20)
+                    ctx.fillStyle = '#fff'
+                    ctx.fillText(label, x1 + 5, y1 - 5)
+                })
+            }
+            img.src = props.filePreviewUrl
+        }
+
+        return { canvasRef }
     },
     template: `
     <section class="display-area">
@@ -146,8 +168,8 @@ const DisplayArea = {
             </div>
             <div class="panel-body">
                 <template v-if="filePreviewUrl">
-                    <img v-if="fileType.startsWith('image/')" :src="filePreviewUrl" alt="原始图片" class="animate-in" />
-                    <video v-else-if="fileType.startsWith('video/')" controls autoplay muted class="animate-in">
+                    <img v-if="fileType && fileType.startsWith('image/')" :src="filePreviewUrl" alt="原始图片" class="animate-in" />
+                    <video v-else-if="fileType && fileType.startsWith('video/')" controls autoplay muted class="animate-in">
                         <source :src="filePreviewUrl" :type="fileType" />
                     </video>
                 </template>
@@ -174,7 +196,16 @@ const DisplayArea = {
                     </svg>
                     <p>正在分析...</p>
                 </div>
-                <img v-else-if="resultImageUrl" :src="resultImageUrl" alt="检测结果" class="animate-in" />
+                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
+                    <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
+                </template>
+                <div v-else-if="detections && detections.length && fileType && fileType.startsWith('video/')" class="detection-list animate-in">
+                    <div class="detect-item" v-for="(d, i) in detections" :key="i">
+                        <span class="detect-class">{{ d.class_name }}</span>
+                        <span class="detect-conf">{{ (d.confidence * 100).toFixed(1) }}%</span>
+                        <span class="detect-risk" :class="d.risk?.level || 'low'">{{ d.risk?.message || '' }}</span>
+                    </div>
+                </div>
                 <div v-else class="placeholder">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -189,16 +220,16 @@ const DisplayArea = {
 
 const StatsGrid = {
     props: {
+        confidence: Number,
         totalCount: Number,
         overallRisk: String,
         riskClass: String,
         inferenceTime: String,
         classCounts: Object
     },
-    emits: ['update:threshold'],
     template: `
     <section class="stats-grid">
-        <div class="stat-card" :class="{ 'stat-card-admin': isAdmin }">
+        <div class="stat-card">
             <div class="stat-icon icon-threshold">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
@@ -209,27 +240,10 @@ const StatsGrid = {
                 </svg>
             </div>
             <div class="stat-content">
-                <span class="stat-label">
-                    置信度阈值
-                    <span v-if="isAdmin" class="admin-badge">管理员</span>
-                </span>
-                <div v-if="isAdmin" class="threshold-control">
-                    <input
-                        type="range" min="0.1" max="0.9" step="0.05"
-                        :value="threshold"
-                        class="slider slider-inline"
-                        @input="$emit('update:threshold', parseFloat($event.target.value))"
-                    >
-                    <span class="threshold-val">{{ threshold.toFixed(2) }}</span>
-                </div>
-                <span v-else class="stat-number">{{ threshold.toFixed(2) }}</span>
+                <span class="stat-label">置信度阈值</span>
+                <span class="stat-number">{{ confidence != null ? confidence.toFixed(2) : '—' }}</span>
             </div>
         </div>
-        inferenceTime: String,
-        classCounts: Object
-    },
-    template: `
-    <section class="stats-grid">
         <div class="stat-card">
             <div class="stat-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -288,17 +302,15 @@ const StatsGrid = {
 }
 
 const HistoryPanel = {
-    props: {
-        history: Array
-    },
+    props: { history: Array },
     emits: ['downloadLog'],
-    setup(props, { emit }) {
-        function riskClass(risk) {
-            if (risk.includes('高')) return 'risk-high'
-            if (risk.includes('中')) return 'risk-medium'
-            return 'risk-low'
+    methods: {
+        riskClass(level) {
+            return RISK_STYLE_MAP[level]?.cls || 'risk-low'
+        },
+        riskLabel(level) {
+            return RISK_STYLE_MAP[level]?.label || level
         }
-        return { riskClass }
     },
     template: `
     <section class="history-panel">
@@ -319,10 +331,11 @@ const HistoryPanel = {
         </div>
         <ul v-if="history.length">
             <li v-for="(item, i) in history" :key="i" class="animate-in">
-                <span class="history-time">{{ item.time }}</span>
-                {{ item.filename }}
+                <span class="history-time">{{ item.created_at }}</span>
+                <span class="history-file">{{ item.filename }}</span>
                 <span class="history-arrow">→</span>
-                <span :class="riskClass(item.risk)">{{ item.risk }}</span>
+                <span class="history-count">{{ item.count }}个目标</span>
+                <span :class="riskClass(item.overall_risk)">{{ riskLabel(item.overall_risk) }}</span>
             </li>
         </ul>
         <ul v-else>
@@ -333,3 +346,4 @@ const HistoryPanel = {
 }
 
 window.AppComponents = { AppHeader, ControlPanel, DisplayArea, StatsGrid, HistoryPanel }
+window.RISK_STYLE_MAP = RISK_STYLE_MAP

@@ -1,15 +1,16 @@
-const { createApp, ref, reactive } = Vue
+const { createApp, reactive, onMounted } = Vue
 
 const app = createApp({
     setup() {
         const currentFile = ref(null)
         const filePreviewUrl = ref('')
         const fileType = ref('')
-        const resultImageUrl = ref('')
+        const detections = ref([])
         const isDetecting = ref(false)
         const showBadge = ref(false)
-        const threshold = ref(0.5)
-        const isAdmin = ref(false)
+        const confidence = ref(null)
+        const healthStatus = ref(null)
+        const modelInfo = ref(null)
 
         const stats = reactive({
             totalCount: 0,
@@ -21,13 +22,50 @@ const app = createApp({
 
         const historyList = ref([])
 
-        function toggleAdmin() {
-            isAdmin.value = !isAdmin.value
+        onMounted(async () => {
+            await fetchHealth()
+            await fetchModelInfo()
+            await fetchHistory()
+        })
+
+        async function fetchHealth() {
+            try {
+                const res = await fetch('/api/health')
+                const json = await res.json()
+                if (json.code === 0) healthStatus.value = json.data
+            } catch { healthStatus.value = null }
         }
 
-        function onThresholdChange(val) {
-            threshold.value = val
+        async function fetchModelInfo() {
+            try {
+                const res = await fetch('/api/models/current')
+                const json = await res.json()
+                if (json.code === 0) modelInfo.value = json.data
+            } catch { modelInfo.value = null }
         }
+
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/api/detections/history')
+                const json = await res.json()
+                if (json.code === 0) {
+                    historyList.value = (json.data.items || []).map(item => ({
+                        created_at: item.created_at || '',
+                        filename: item.filename || '',
+                        count: item.count || 0,
+                        overall_risk: computeOverallRisk(item.detections || [])
+                    }))
+                }
+            } catch { historyList.value = [] }
+        }
+
+        function computeOverallRisk(detections) {
+            const levels = detections.map(d => d.risk?.level || 'low')
+            if (levels.includes('high')) return 'high'
+            if (levels.includes('medium')) return 'medium'
+            return 'low'
+        }
+
 
         function onFileSelected(file) {
             currentFile.value = file
@@ -43,7 +81,8 @@ const app = createApp({
             currentFile.value = null
             filePreviewUrl.value = ''
             fileType.value = ''
-            resultImageUrl.value = ''
+            detections.value = []
+            confidence.value = null
             stats.totalCount = 0
             stats.overallRisk = '—'
             stats.riskClass = 'risk-low'
@@ -55,65 +94,82 @@ const app = createApp({
         async function onDetect() {
             if (!currentFile.value) return
             isDetecting.value = true
+            detections.value = []
+
+            const isImage = fileType.value.startsWith('image/')
+            const endpoint = isImage ? '/api/detections/images' : '/api/detections/videos'
 
             try {
                 const formData = new FormData()
                 formData.append('file', currentFile.value)
-                formData.append('threshold', threshold.value)
+                if (isImage) formData.append('confidence', 0.5)
 
-                const res = await fetch('/api/detect', {
-                    method: 'POST',
-                    body: formData
-                })
-                const data = await res.json()
+                const res = await fetch(endpoint, { method: 'POST', body: formData })
+                const json = await res.json()
 
-                resultImageUrl.value = data.result_image || ''
+                if (json.code !== 0) {
+                    alert(json.message || '检测失败')
+                    return
+                }
+
+                const data = json.data
+
+                if (!isImage) {
+                    alert('视频检测功能开发中')
+                    return
+                }
+
+                detections.value = data.detections || []
                 updateStats(data)
-                addHistory(currentFile.value.name, data.overall_risk)
+                await fetchHistory()
 
                 showBadge.value = true
                 setTimeout(() => { showBadge.value = false }, 3000)
             } catch (err) {
                 console.error(err)
-                alert('检测失败，请检查后端服务')
+                alert('检测失败，请检查后端服务是否启动')
             } finally {
                 isDetecting.value = false
             }
         }
 
         function updateStats(data) {
-            const total = Object.values(data.total_counts).reduce((a, b) => a + b, 0)
-            stats.totalCount = total
-            stats.overallRisk = data.overall_risk
-            stats.riskClass = data.overall_risk.includes('高') ? 'risk-high'
-                : data.overall_risk.includes('中') ? 'risk-medium' : 'risk-low'
-            stats.inferenceTime = data.inference_time + ' ms'
-            stats.classCounts = data.class_counts
-        }
+            const detList = data.detections || []
+            stats.totalCount = data.count || detList.length
+            confidence.value = data.confidence ?? null
 
-        function addHistory(filename, risk) {
-            const now = new Date().toLocaleString()
-            historyList.value.unshift({ time: now, filename, risk })
-            if (historyList.value.length > 10) historyList.value.pop()
+            const overallRisk = computeOverallRisk(detList)
+            const riskInfo = window.RISK_STYLE_MAP[overallRisk] || window.RISK_STYLE_MAP.low
+            stats.overallRisk = riskInfo.label
+            stats.riskClass = riskInfo.cls
+
+            stats.inferenceTime = data.inference_time ? `${data.inference_time} ms` : '— ms'
+
+            const counts = {}
+            detList.forEach(d => {
+                const cls = d.class_name || 'unknown'
+                counts[cls] = (counts[cls] || 0) + 1
+            })
+            stats.classCounts = counts
         }
 
         function onDownloadLog() {
-            window.open('/api/download_log', '_blank')
+            window.open('/api/detections/history', '_blank')
         }
 
         return {
-            currentFile, filePreviewUrl, fileType, resultImageUrl,
-            isDetecting, showBadge, threshold, isAdmin, stats, historyList,
-            toggleAdmin, onThresholdChange, onFileSelected, onClear, onDetect, onDownloadLog
+            currentFile, filePreviewUrl, fileType, detections,
+            isDetecting, showBadge, confidence,
+            healthStatus, modelInfo, stats, historyList,
+            onFileSelected, onClear, onDetect, onDownloadLog
         }
     }
 })
 
-const { AppHeader, ControlPanel, DisplayArea, StatsGrid, HistoryPanel } = window.AppComponents
-app.component('app-header', AppHeader)
-app.component('control-panel', ControlPanel)
-app.component('display-area', DisplayArea)
-app.component('stats-grid', StatsGrid)
-app.component('history-panel', HistoryPanel)
+app.component('app-header', window.AppComponents.AppHeader)
+app.component('control-panel', window.AppComponents.ControlPanel)
+app.component('display-area', window.AppComponents.DisplayArea)
+app.component('stats-grid', window.AppComponents.StatsGrid)
+app.component('history-panel', window.AppComponents.HistoryPanel)
 
 app.mount('#app')
