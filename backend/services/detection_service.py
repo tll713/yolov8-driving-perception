@@ -7,7 +7,9 @@ from backend.config import (
     UPLOAD_DIR,
 )
 from backend.services.history_service import append_history
+from backend.services.result_renderer import render_detection_image
 from detect import detect_image
+from risk import summarize_risk
 from utils import save_upload
 
 
@@ -30,14 +32,34 @@ def _validate_file(upload, allowed_extensions, label):
 def detect_uploaded_image(upload, confidence=0.5):
     _validate_file(upload, ALLOWED_IMAGE_EXTENSIONS, "图片")
     confidence = _validate_confidence(confidence)
+    original_filename = upload.filename
 
     upload_path = save_upload(upload, upload_dir=UPLOAD_DIR)
-    detections = detect_image(upload_path, model_path=DEFAULT_MODEL_PATH, confidence=confidence)
+    detection_result = detect_image(
+        upload_path,
+        model_path=DEFAULT_MODEL_PATH,
+        confidence=confidence,
+    )
+    detections = detection_result["detections"]
+    result_path = render_detection_image(upload_path, detections)
+    risk_summary = summarize_risk(detections)
+
     result = {
         "type": "image",
+        "original_filename": original_filename,
         "filename": upload_path.name,
+        "upload_path": str(upload_path),
+        "result_filename": result_path.name,
+        "result_path": str(result_path),
+        "model_name": DEFAULT_MODEL_PATH.stem,
         "confidence": confidence,
+        "confidence_threshold": confidence,
+        "image_width": detection_result["image_width"],
+        "image_height": detection_result["image_height"],
         "count": len(detections),
+        "total_objects": len(detections),
+        "inference_time_ms": detection_result["inference_time_ms"],
+        **risk_summary,
         "detections": detections,
     }
     append_history(result)
@@ -49,6 +71,8 @@ def prepare_video_detection(upload):
     upload_path = save_upload(upload, upload_dir=UPLOAD_DIR)
     return {
         "type": "video",
+        "original_filename": upload.filename,
         "filename": upload_path.name,
+        "upload_path": str(upload_path),
         "status": "reserved",
     }

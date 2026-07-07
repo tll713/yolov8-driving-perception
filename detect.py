@@ -1,30 +1,24 @@
 from pathlib import Path
+from time import perf_counter
 
+from backend.config import DEFAULT_MODEL_PATH
+from backend.services.model_service import get_model
 from risk import assess_detections
-
-
-DEFAULT_MODEL_PATH = Path("models/yolov8s.pt")
-
-
-def load_model(model_path=DEFAULT_MODEL_PATH):
-    try:
-        from ultralytics import YOLO
-    except ImportError as exc:
-        raise RuntimeError("未安装 ultralytics，请先执行 pip install -r requirements.txt") from exc
-
-    return YOLO(str(model_path))
 
 
 def detect_image(image_path, model_path=DEFAULT_MODEL_PATH, confidence=0.5):
     import cv2
 
-    model = load_model(model_path)
+    image_path = Path(image_path)
+    model = get_model(model_path)
     image = cv2.imread(str(image_path))
     if image is None:
         raise ValueError("图片读取失败，请检查文件格式")
 
     height, width = image.shape[:2]
+    started_at = perf_counter()
     results = model.predict(str(image_path), conf=confidence, verbose=False)
+    inference_time_ms = round((perf_counter() - started_at) * 1000, 2)
     detections = []
 
     for result in results:
@@ -42,4 +36,9 @@ def detect_image(image_path, model_path=DEFAULT_MODEL_PATH, confidence=0.5):
                 }
             )
 
-    return assess_detections(detections, width, height)
+    return {
+        "image_width": width,
+        "image_height": height,
+        "inference_time_ms": inference_time_ms,
+        "detections": assess_detections(detections, width, height),
+    }
