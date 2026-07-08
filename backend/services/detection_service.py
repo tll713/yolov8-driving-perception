@@ -10,7 +10,8 @@ from backend.config import (
 )
 from backend.services.history_service import append_history
 from backend.services.result_renderer import render_detection_image
-from detect import detect_image, load_model
+from backend.services.model_service import get_model
+from detect import detect_image
 from risk import assess_detection, summarize_risk
 from utils import save_upload
 
@@ -84,7 +85,7 @@ def detect_uploaded_video(upload, confidence=DEFAULT_CONFIDENCE):
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    model = load_model()
+    model = get_model(DEFAULT_MODEL_PATH)
 
     result_path = RESULT_DIR / f"{upload_path.stem}_result.mp4"
     RESULT_DIR.mkdir(exist_ok=True)
