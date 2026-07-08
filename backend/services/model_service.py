@@ -8,6 +8,9 @@ _MODEL_CACHE = {}
 
 def get_model(model_path=DEFAULT_MODEL_PATH):
     model_path = Path(model_path)
+    if not model_path.exists():
+        raise RuntimeError(f"模型文件不存在：{model_path}，请先将 YOLOv8 权重放入 models 目录")
+
     cache_key = str(model_path.resolve())
 
     if cache_key not in _MODEL_CACHE:
@@ -23,3 +26,7 @@ def get_model(model_path=DEFAULT_MODEL_PATH):
 
 def clear_model_cache():
     _MODEL_CACHE.clear()
+
+
+def warmup_model(model_path=DEFAULT_MODEL_PATH):
+    return get_model(model_path)

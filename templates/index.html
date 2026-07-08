@@ -31,6 +31,7 @@
                 :file-preview-url="filePreviewUrl"
                 :file-type="fileType"
                 :detections="detections"
+                :video-frames="videoFrames"
                 :is-detecting="isDetecting"
                 :show-badge="showBadge"
                 :result-video-url="resultVideoUrl"
@@ -44,11 +45,68 @@
                 :risk-class="stats.riskClass"
                 :inference-time="stats.inferenceTime"
                 :class-counts="stats.classCounts"
+                :risk-counts="stats.riskCounts"
+                :max-risk-score="stats.maxRiskScore"
+                :inference-mode="stats.inferenceMode"
+                :inference-size="stats.inferenceSize"
+                :refined="stats.refined"
             ></stats-grid>
+
+            <risk-analysis-panel
+                :detections="detections"
+            ></risk-analysis-panel>
+
+            <safety-advice-panel
+                :advice="safetyAdvice"
+            ></safety-advice-panel>
+
+            <scene-insight-panel
+                :summary="sceneSummary"
+                :trace="decisionTrace"
+            ></scene-insight-panel>
+
+            <demo-script-panel
+                :script="demoScript"
+                :timeline="videoTimeline"
+            ></demo-script-panel>
+
+            <simulation-panel
+                :presets="simulationPresets"
+                :scenario="simulationScenario"
+                :speed="simulationSpeed"
+                :duration="simulationDuration"
+                :result="simulationResult"
+                :is-simulating="isSimulating"
+                @scenario-change="onSimulationScenarioChange"
+                @speed-change="simulationSpeed = $event"
+                @duration-change="simulationDuration = $event"
+                @run="runSimulation"
+            ></simulation-panel>
+
+            <report-panel
+                :current-file="currentFile"
+                :stats="stats"
+                :detections="detections"
+                :advice="safetyAdvice"
+                :model-info="modelInfo"
+                @export-report="onExportReport"
+            ></report-panel>
+
+            <algorithm-flow-panel></algorithm-flow-panel>
+
+            <system-info-panel
+                :model-info="modelInfo"
+                :health-status="healthStatus"
+            ></system-info-panel>
+
+            <dashboard-panel
+                :dashboard="dashboard"
+            ></dashboard-panel>
 
             <history-panel
                 :history="historyList"
                 @download-log="onDownloadLog"
+                @clear-history="onClearHistory"
             ></history-panel>
         </main>
     </div>

@@ -2,8 +2,10 @@ from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
 from backend.config import DEFAULT_CONFIDENCE
+from backend.services.database_service import get_detection_result
+from backend.services.demo_analysis_service import build_dashboard
 from backend.services.detection_service import detect_uploaded_image, detect_uploaded_video
-from backend.services.history_service import list_history
+from backend.services.history_service import clear_history, list_history
 
 
 detections_bp = Blueprint("detections", __name__)
@@ -49,4 +51,24 @@ def detect_video_endpoint():
 
 @detections_bp.get("/detections/history")
 def detection_history():
-    return jsonify(build_success_response({"items": list_history()}))
+    items = list_history()
+    return jsonify(build_success_response({"items": items, "dashboard": build_dashboard(items)}))
+
+
+@detections_bp.post("/detections/history/clear")
+def clear_detection_history():
+    clear_history()
+    return jsonify(build_success_response({"cleared": True}))
+
+
+@detections_bp.get("/detections/records/<int:record_id>")
+def detection_record(record_id):
+    try:
+        result = get_detection_result(record_id)
+    except Exception as exc:
+        return jsonify(build_error_response(f"查询检测结果失败：{exc}", 500)), 500
+
+    if result is None:
+        return jsonify(build_error_response("检测记录不存在", 404)), 404
+
+    return jsonify(build_success_response(result))

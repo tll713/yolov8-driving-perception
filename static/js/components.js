@@ -1,9 +1,10 @@
-const { ref, watch, nextTick, computed } = Vue
+(() => {
+const { ref, watch, nextTick } = Vue
 
 const RISK_STYLE_MAP = {
     high: { label: '高风险', cls: 'risk-high' },
     medium: { label: '中风险', cls: 'risk-medium' },
-    info: { label: '信息', cls: 'risk-info' },
+    info: { label: '交通提示', cls: 'risk-info' },
     low: { label: '低风险', cls: 'risk-low' },
 }
 
@@ -29,14 +30,14 @@ const AppHeader = {
         <div class="header-inner">
             <div class="logo">
                 <div class="logo-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1>自动驾驶感知系统</h1>
-                    <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.classes?.length || 0 }} 类</span>
-                    <span class="logo-sub" v-else>YOLOv8 Object Detection & Risk Assessment</span>
+                    <h1>自动驾驶场景风险感知系统</h1>
+                    <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.inference_mode }} · {{ modelInfo.device }}</span>
+                    <span class="logo-sub" v-else>YOLOv8 Detection & Driving Risk Assessment</span>
                 </div>
             </div>
             <div class="header-right">
@@ -45,18 +46,13 @@ const AppHeader = {
                     <span class="status-text">{{ statusText }}</span>
                 </div>
                 <div class="header-auth" v-if="currentUser">
-                    <div class="user-badge">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                        </svg>
-                        <span>{{ currentUser }}</span>
-                    </div>
+                    <span class="user-badge">{{ currentUser }}</span>
                     <button class="btn btn-ghost btn-sm" @click="handleLogout">退出</button>
                 </div>
                 <div class="header-auth" v-else>
                     <a href="/login" class="btn btn-ghost btn-sm">登录</a>
                     <a href="/register" class="btn btn-primary btn-sm">注册</a>
-                    <a href="/admin/login" class="btn btn-ghost btn-sm" style="color:#8b5cf6;border-color:rgba(139,92,246,0.2);">管理</a>
+                    <a href="/admin/login" class="btn btn-ghost btn-sm">管理</a>
                 </div>
             </div>
         </div>
@@ -105,10 +101,9 @@ const ControlPanel = {
                 @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
                 @click="$el.querySelector('input[type=file]').click()">
                 <div class="upload-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
+                        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                 </div>
                 <div class="upload-info">
@@ -120,13 +115,7 @@ const ControlPanel = {
             </div>
             <div class="action-group">
                 <button class="btn btn-primary" :disabled="!hasFile || isDetecting" @click="$emit('detect')">
-                    <svg v-if="!isDetecting" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                    </svg>
-                    {{ isDetecting ? '检测中...' : '开始检测' }}
+                    {{ isDetecting ? '分析中...' : '开始检测' }}
                 </button>
                 <button class="btn btn-ghost" @click="onClear">清空结果</button>
             </div>
@@ -140,12 +129,71 @@ const DisplayArea = {
         filePreviewUrl: String,
         fileType: String,
         detections: Array,
+        videoFrames: Array,
         isDetecting: Boolean,
         showBadge: Boolean,
         resultVideoUrl: String,
         resultImageUrl: String
     },
     setup(props) {
+        const canvasRef = ref(null)
+
+        watch(() => [props.detections, props.filePreviewUrl], () => {
+            if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
+                nextTick(() => drawBoxes())
+            }
+        }, { deep: true })
+
+        function drawBoxes() {
+            const canvas = canvasRef.value
+            if (!canvas) return
+            const ctx = canvas.getContext('2d')
+            const img = new Image()
+            img.onload = () => {
+                canvas.width = img.width
+                canvas.height = img.height
+                ctx.drawImage(img, 0, 0)
+                drawDrivingCorridor(ctx, canvas.width, canvas.height)
+                props.detections.forEach(d => {
+                    const [x1, y1, x2, y2] = d.bbox
+                    const risk = d.risk || {}
+                    const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
+                    ctx.strokeStyle = color
+                    ctx.lineWidth = 3
+                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+                    const label = `${d.class_name_cn || d.class_name} ${(d.confidence * 100).toFixed(0)}% ${risk.score || 0}`
+                    ctx.font = '14px JetBrains Mono, monospace'
+                    const tw = ctx.measureText(label).width
+                    ctx.fillStyle = color
+                    ctx.fillRect(x1, Math.max(0, y1 - 22), tw + 10, 22)
+                    ctx.fillStyle = '#fff'
+                    ctx.fillText(label, x1 + 5, Math.max(14, y1 - 6))
+                })
+            }
+            img.src = props.filePreviewUrl
+        }
+
+        function drawDrivingCorridor(ctx, width, height) {
+            const nearLeft = width * 0.1
+            const nearRight = width * 0.9
+            const farLeft = width * 0.38
+            const farRight = width * 0.62
+            const horizon = height * 0.38
+            ctx.save()
+            ctx.beginPath()
+            ctx.moveTo(nearLeft, height)
+            ctx.lineTo(farLeft, horizon)
+            ctx.lineTo(farRight, horizon)
+            ctx.lineTo(nearRight, height)
+            ctx.closePath()
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.12)'
+            ctx.fill()
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.55)'
+            ctx.lineWidth = 3
+            ctx.stroke()
+            ctx.restore()
+        }
+
         function downloadResult() {
             if (props.fileType && props.fileType.startsWith('video/') && props.resultVideoUrl) {
                 const link = document.createElement('a')
@@ -164,21 +212,31 @@ const DisplayArea = {
         }
 
         return { downloadResult }
+        return { canvasRef, downloadResult }
     },
     template: `
     <section class="display-area">
-        <div class="panel panel-highlight" style="grid-column: 1 / -1;">
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-dot"></span>
+                <h3>原始画面</h3>
+            </div>
+            <div class="panel-body">
+                <template v-if="filePreviewUrl">
+                    <img v-if="fileType && fileType.startsWith('image/')" :src="filePreviewUrl" alt="原始图片" class="animate-in" />
+                    <video v-else-if="fileType && fileType.startsWith('video/')" controls class="animate-in">
+                        <source :src="filePreviewUrl" :type="fileType" />
+                    </video>
+                </template>
+                <div v-else class="placeholder"><p>请上传图片或视频</p></div>
+            </div>
+        </div>
+        <div class="panel panel-highlight">
             <div class="panel-header">
                 <span class="panel-dot dot-accent"></span>
                 <h3>检测结果</h3>
                 <span v-if="showBadge" class="panel-badge">NEW</span>
-                <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    下载结果
-                </button>
+                <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">下载结果</button>
             </div>
             <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
                 <div v-if="isDetecting" class="placeholder">
@@ -189,25 +247,26 @@ const DisplayArea = {
                 </div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
+            <div class="panel-body">
+                <div v-if="isDetecting" class="placeholder"><p>正在分析场景风险...</p></div>
+                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
+                    <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
                 </template>
-                <div v-else-if="detections && detections.length && fileType && fileType.startsWith('video/')" class="video-result-wrap animate-in">
-                    <div class="video-canvas-wrap">
-                        <video ref="videoRef" :src="resultVideoUrl || filePreviewUrl" controls muted class="result-video"></video>
-                    </div>
-                    <div class="detection-list">
-                        <div class="detect-item" v-for="(d, i) in detections" :key="i">
-                            <span class="detect-class">{{ d.class_name }}</span>
-                            <span class="detect-conf">{{ (d.confidence * 100).toFixed(1) }}%</span>
-                            <span class="detect-risk" :class="d.risk?.level || 'low'">{{ d.risk?.message || '' }}</span>
+                <div v-else-if="resultVideoUrl && fileType && fileType.startsWith('video/')" class="video-result-wrap animate-in">
+                    <video :src="resultVideoUrl" controls muted class="result-video"></video>
+                </div>
+                <div v-else-if="videoFrames && videoFrames.length" class="frame-list animate-in">
+                    <div class="frame-card" v-for="frame in videoFrames" :key="frame.frame_index">
+                        <img v-if="frame.result_filename" :src="'/results/' + frame.result_filename" alt="关键帧标注图" />
+                        <div>
+                            <span>关键帧 {{ frame.frame_index }}</span>
+                            <strong>{{ frame.count }} 个目标</strong>
+                            <small>{{ frame.timestamp_sec != null ? frame.timestamp_sec + 's' : '时间未知' }}</small>
+                            <span :class="'risk-' + (frame.max_risk_level || 'low')">{{ frame.max_risk_level || 'low' }}</span>
                         </div>
                     </div>
                 </div>
-                <div v-else class="placeholder">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <p>检测后将在此显示</p>
-                </div>
+                <div v-else class="placeholder"><p>检测后将在此显示</p></div>
             </div>
         </div>
     </section>
@@ -221,77 +280,334 @@ const StatsGrid = {
         overallRisk: String,
         riskClass: String,
         inferenceTime: String,
-        classCounts: Object
+        classCounts: Object,
+        riskCounts: Object,
+        maxRiskScore: Number,
+        inferenceMode: String,
+        inferenceSize: Number,
+        refined: Boolean
     },
     template: `
     <section class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon icon-threshold">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
-                    <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
-                    <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
-                    <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
-                    <line x1="17" y1="16" x2="23" y2="16"/>
-                </svg>
-            </div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">置信度阈值</span><span class="stat-number">{{ confidence != null ? confidence.toFixed(2) : '-' }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">检测目标数</span><span class="stat-number">{{ totalCount }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">整体风险</span><span class="stat-number" :class="riskClass">{{ overallRisk }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理耗时</span><span class="stat-number">{{ inferenceTime }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">最高风险分</span><span class="stat-number">{{ maxRiskScore || 0 }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理模式</span><span class="stat-number stat-text">{{ inferenceMode || '-' }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">输入尺寸</span><span class="stat-number">{{ inferenceSize || '-' }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">高精度补检</span><span class="stat-number stat-text">{{ refined ? '已触发' : '未触发' }}</span></div></div>
+        <div class="stat-card stat-card-wide">
             <div class="stat-content">
-                <span class="stat-label">置信度阈值</span>
-                <span class="stat-number">{{ confidence != null ? confidence.toFixed(2) : '—' }}</span>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-            </div>
-            <div class="stat-content">
-                <span class="stat-label">检测目标数</span>
-                <span class="stat-number">{{ totalCount }}</span>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon icon-risk">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-            </div>
-            <div class="stat-content">
-                <span class="stat-label">整体风险</span>
-                <span class="stat-number" :class="riskClass">{{ overallRisk }}</span>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon icon-time">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-            </div>
-            <div class="stat-content">
-                <span class="stat-label">推理耗时</span>
-                <span class="stat-number">{{ inferenceTime }}</span>
+                <span class="stat-label">风险统计</span>
+                <div class="class-tags">
+                    <span class="class-tag risk-high">高 {{ riskCounts?.high || 0 }}</span>
+                    <span class="class-tag risk-medium">中 {{ riskCounts?.medium || 0 }}</span>
+                    <span class="class-tag risk-low">低 {{ riskCounts?.low || 0 }}</span>
+                    <span class="class-tag risk-info">提示 {{ riskCounts?.info || 0 }}</span>
+                </div>
             </div>
         </div>
         <div class="stat-card stat-card-wide">
-            <div class="stat-icon icon-class">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
-                    <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
-                    <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-                </svg>
-            </div>
             <div class="stat-content">
                 <span class="stat-label">各类别计数</span>
                 <div class="class-tags" v-if="Object.keys(classCounts).length">
-                    <span class="class-tag" v-for="(count, cls) in classCounts" :key="cls">
-                        {{ cls }} <span class="class-tag-count">{{ count }}</span>
-                    </span>
+                    <span class="class-tag" v-for="(count, cls) in classCounts" :key="cls">{{ cls }} <span class="class-tag-count">{{ count }}</span></span>
                 </div>
-                <span v-else class="stat-number">—</span>
+                <span v-else class="stat-number stat-text">暂无目标</span>
             </div>
+        </div>
+    </section>
+    `
+}
+
+const RiskAnalysisPanel = {
+    props: { detections: Array },
+    methods: {
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
+    },
+    template: `
+    <section class="analysis-panel">
+        <div class="section-header"><h3>目标风险明细</h3><span>{{ detections.length }} items</span></div>
+        <div v-if="detections.length" class="analysis-list">
+            <article class="analysis-item" v-for="(d, i) in detections" :key="i">
+                <div class="analysis-main">
+                    <strong>{{ d.class_name_cn || d.class_name }}</strong>
+                    <span>{{ (d.confidence * 100).toFixed(1) }}%</span>
+                    <span :class="riskClass(d.risk?.level)">{{ riskLabel(d.risk?.level) }}</span>
+                </div>
+                <p>{{ d.risk?.reason || d.risk_reason || '暂无风险原因' }}</p>
+                <div class="metric-row">
+                    <span>风险分 {{ d.risk?.score || d.risk_score || 0 }}</span>
+                    <span>路径重叠 {{ Math.round((d.lane_overlap || 0) * 100) }}%</span>
+                    <span>距离分 {{ d.distance_score || 0 }}</span>
+                </div>
+            </article>
+        </div>
+        <div v-else class="empty-block">完成检测后显示每个目标的风险依据。</div>
+    </section>
+    `
+}
+
+const SafetyAdvicePanel = {
+    props: { advice: Array },
+    methods: {
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+    },
+    template: `
+    <section class="analysis-panel">
+        <div class="section-header"><h3>驾驶安全建议</h3><span>decision support</span></div>
+        <div v-if="advice && advice.length" class="advice-list">
+            <div class="advice-item" v-for="(item, i) in advice" :key="i">
+                <span :class="riskClass(item.level)">{{ item.level }}</span>
+                <p>{{ item.message }}</p>
+            </div>
+        </div>
+        <div v-else class="empty-block">完成检测后自动生成驾驶建议。</div>
+    </section>
+    `
+}
+
+const SceneInsightPanel = {
+    props: {
+        summary: Object,
+        trace: Array,
+    },
+    methods: {
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
+    },
+    template: `
+    <section class="insight-panel">
+        <div class="section-header"><h3>场景理解与决策链</h3><span>explainable risk</span></div>
+        <div v-if="summary" class="insight-layout">
+            <div class="scene-summary">
+                <div>
+                    <span>场景类型</span>
+                    <strong>{{ summary.scene_type }}</strong>
+                </div>
+                <div>
+                    <span>目标密度</span>
+                    <strong>{{ summary.density_level }}</strong>
+                </div>
+                <div>
+                    <span>路径占用</span>
+                    <strong>{{ summary.lane_target_count || 0 }}</strong>
+                </div>
+                <div>
+                    <span>近距离目标</span>
+                    <strong>{{ summary.close_target_count || 0 }}</strong>
+                </div>
+                <div v-if="summary.primary_target" class="scene-primary">
+                    <span>主风险目标</span>
+                    <strong>{{ summary.primary_target.class_name }} · {{ summary.primary_target.risk_score }}</strong>
+                    <small :class="riskClass(summary.primary_target.risk_level)">{{ riskLabel(summary.primary_target.risk_level) }}</small>
+                </div>
+                <div class="class-tags scene-tags">
+                    <span class="class-tag" v-for="tag in summary.tags" :key="tag">{{ tag }}</span>
+                </div>
+            </div>
+            <div class="decision-trace">
+                <article v-for="(item, i) in trace" :key="i">
+                    <span>{{ i + 1 }}</span>
+                    <div>
+                        <strong>{{ item.step }}</strong>
+                        <p>{{ item.result }}</p>
+                        <small>{{ item.evidence }}</small>
+                    </div>
+                </article>
+            </div>
+        </div>
+        <div v-else class="empty-block">完成检测后展示场景标签、主风险目标和逐步决策依据。</div>
+    </section>
+    `
+}
+
+const DemoScriptPanel = {
+    props: {
+        script: Array,
+        timeline: Array,
+    },
+    methods: {
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+    },
+    template: `
+    <section class="flow-panel">
+        <div class="section-header"><h3>演示讲解脚本</h3><span>presentation helper</span></div>
+        <div v-if="script && script.length" class="demo-script">
+            <ol>
+                <li v-for="(line, i) in script" :key="i">{{ line }}</li>
+            </ol>
+        </div>
+        <div v-else class="empty-block">检测完成后自动生成答辩讲解要点。</div>
+        <div v-if="timeline && timeline.length" class="timeline-list">
+            <div class="timeline-item" v-for="item in timeline" :key="item.frame_index">
+                <span>帧 {{ item.frame_index }}</span>
+                <strong :class="riskClass(item.risk_level)">{{ item.risk_score }}</strong>
+                <small>{{ item.timestamp_sec != null ? item.timestamp_sec + 's' : '-' }}</small>
+                <em>{{ item.trend }}</em>
+            </div>
+        </div>
+    </section>
+    `
+}
+
+const SimulationPanel = {
+    props: {
+        presets: Array,
+        scenario: String,
+        speed: Number,
+        duration: Number,
+        result: Object,
+        isSimulating: Boolean,
+    },
+    emits: ['scenarioChange', 'speedChange', 'durationChange', 'run'],
+    methods: {
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+        currentFrame() {
+            const timeline = this.result?.timeline || []
+            if (!timeline.length) return null
+            return timeline.reduce((best, item) => item.max_risk_score > best.max_risk_score ? item : best, timeline[0])
+        },
+        targetStyle(target) {
+            const x = Math.max(8, Math.min(92, 50 + (target.lateral_m || 0) * 13))
+            const y = Math.max(8, Math.min(92, 88 - (target.distance_m || 0) * 1.35))
+            return { left: x + '%', top: y + '%' }
+        },
+    },
+    computed: {
+        frame() {
+            return this.currentFrame()
+        },
+        peakRisk() {
+            return this.result?.peak_risk || { level: 'low', score: 0, time_sec: 0 }
+        },
+    },
+    template: `
+    <section class="simulation-panel">
+        <div class="section-header"><h3>风险仿真</h3><span>2D driving simulation</span></div>
+        <div class="simulation-layout">
+            <div class="simulation-controls">
+                <label>
+                    <span>场景预设</span>
+                    <select :value="scenario" @change="$emit('scenarioChange', $event.target.value)">
+                        <option v-for="item in presets" :key="item.key" :value="item.key">{{ item.name }}</option>
+                    </select>
+                </label>
+                <label>
+                    <span>自车速度 {{ speed }} km/h</span>
+                    <input type="range" min="0" max="100" step="5" :value="speed" @input="$emit('speedChange', Number($event.target.value))">
+                </label>
+                <label>
+                    <span>仿真时长 {{ duration }} s</span>
+                    <input type="range" min="2" max="10" step="1" :value="duration" @input="$emit('durationChange', Number($event.target.value))">
+                </label>
+                <button class="btn btn-primary" :disabled="isSimulating" @click="$emit('run')">
+                    {{ isSimulating ? '仿真中...' : '运行仿真' }}
+                </button>
+                <div v-if="result" class="simulation-summary">
+                    <strong :class="riskClass(peakRisk.level)">最高风险 {{ peakRisk.score }}</strong>
+                    <span>{{ peakRisk.time_sec }}s · {{ result.scenario_name }}</span>
+                    <p v-for="line in result.summary" :key="line">{{ line }}</p>
+                </div>
+            </div>
+            <div class="simulation-road">
+                <div class="road-lane lane-left"></div>
+                <div class="road-lane lane-right"></div>
+                <div class="ego-car">自车</div>
+                <template v-if="frame">
+                    <div
+                        v-for="target in frame.targets"
+                        :key="target.id"
+                        class="sim-target"
+                        :class="'risk-bg-' + target.risk.level"
+                        :style="targetStyle(target)"
+                    >
+                        <strong>{{ target.class_name_cn }}</strong>
+                        <span>{{ target.risk.score }}</span>
+                    </div>
+                </template>
+            </div>
+        </div>
+        <div v-if="result" class="sim-timeline">
+            <div v-for="item in result.timeline" :key="item.frame_index" class="sim-tick">
+                <span>{{ item.time_sec }}s</span>
+                <strong :class="riskClass(item.max_risk_level)">{{ item.max_risk_score }}</strong>
+            </div>
+        </div>
+    </section>
+    `
+}
+
+const DashboardPanel = {
+    props: { dashboard: Object },
+    template: `
+    <section class="system-panel">
+        <div class="section-header"><h3>数据统计看板</h3><span>recent history</span></div>
+        <div class="system-grid">
+            <div><span>检测次数</span><strong>{{ dashboard?.total_records || 0 }}</strong></div>
+            <div><span>累计目标</span><strong>{{ dashboard?.total_objects || 0 }}</strong></div>
+            <div><span>高风险记录</span><strong>{{ dashboard?.high_risk_records || 0 }}</strong></div>
+            <div><span>高风险占比</span><strong>{{ Math.round((dashboard?.high_risk_ratio || 0) * 100) }}%</strong></div>
+            <div><span>平均耗时</span><strong>{{ dashboard?.average_inference_time_ms || 0 }} ms</strong></div>
+            <div><span>常见目标</span><strong>{{ dashboard?.top_classes?.[0]?.class_name || '-' }}</strong></div>
+        </div>
+        <div class="class-tags dashboard-tags" v-if="dashboard?.top_classes?.length">
+            <span class="class-tag" v-for="item in dashboard.top_classes" :key="item.class_name">
+                {{ item.class_name }} <span class="class-tag-count">{{ item.count }}</span>
+            </span>
+        </div>
+    </section>
+    `
+}
+
+const ReportPanel = {
+    props: {
+        currentFile: Object,
+        stats: Object,
+        detections: Array,
+        advice: Array,
+        modelInfo: Object,
+    },
+    emits: ['exportReport'],
+    template: `
+    <section class="flow-panel">
+        <div class="section-header"><h3>检测报告</h3><span>HTML / printable</span></div>
+        <div class="report-row">
+            <div>
+                <strong>{{ currentFile?.name || '暂无检测文件' }}</strong>
+                <p>报告包含模型信息、风险统计、目标明细、驾驶建议和算法流程，可直接打印或另存为 PDF。</p>
+            </div>
+            <button class="btn btn-primary" :disabled="!detections.length" @click="$emit('exportReport')">生成报告</button>
+        </div>
+    </section>
+    `
+}
+
+const SystemInfoPanel = {
+    props: { modelInfo: Object, healthStatus: Object },
+    template: `
+    <section class="system-panel">
+        <div class="section-header"><h3>系统运行状态</h3><span>{{ healthStatus?.status === 'ok' ? 'online' : 'checking' }}</span></div>
+        <div class="system-grid">
+            <div><span>模型</span><strong>{{ modelInfo?.name || '-' }}</strong></div>
+            <div><span>模型文件</span><strong>{{ modelInfo?.exists ? '已就绪' : '缺失' }}</strong></div>
+            <div><span>推理模式</span><strong>{{ modelInfo?.inference_mode || '-' }}</strong></div>
+            <div><span>输入尺寸</span><strong>{{ modelInfo?.image_size || '-' }} / {{ modelInfo?.refine_image_size || '-' }}</strong></div>
+            <div><span>补检阈值</span><strong>{{ modelInfo?.refine_confidence || '-' }}</strong></div>
+            <div><span>运行设备</span><strong>{{ modelInfo?.device || 'cpu' }}</strong></div>
+        </div>
+    </section>
+    `
+}
+
+const AlgorithmFlowPanel = {
+    template: `
+    <section class="flow-panel">
+        <div class="section-header"><h3>算法流程</h3><span>demo pipeline</span></div>
+        <div class="flow-steps">
+            <div>文件上传</div><div>YOLOv8 检测</div><div>自车行驶路径分析</div><div>风险评分</div><div>结果保存</div>
         </div>
     </section>
     `
@@ -299,47 +615,51 @@ const StatsGrid = {
 
 const HistoryPanel = {
     props: { history: Array },
-    emits: ['downloadLog'],
+    emits: ['downloadLog', 'clearHistory'],
     methods: {
-        riskClass(level) {
-            return RISK_STYLE_MAP[level]?.cls || 'risk-low'
-        },
-        riskLabel(level) {
-            return RISK_STYLE_MAP[level]?.label || level
-        }
+        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
+        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' }
     },
     template: `
     <section class="history-panel">
         <div class="history-header">
-            <h3>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-                检测历史
-            </h3>
-            <button class="btn btn-ghost btn-sm" @click="$emit('downloadLog')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                下载日志
-            </button>
+            <h3>检测历史</h3>
+            <div class="action-group">
+                <button class="btn btn-ghost btn-sm" @click="$emit('clearHistory')">清空</button>
+                <button class="btn btn-ghost btn-sm" @click="$emit('downloadLog')">导出</button>
+            </div>
         </div>
-        <ul v-if="history.length">
-            <li v-for="(item, i) in history" :key="i" class="animate-in">
-                <span class="history-time">{{ item.created_at }}</span>
-                <span class="history-file">{{ item.filename }}</span>
-                <span class="history-arrow">→</span>
-                <span class="history-count">{{ item.count }}个目标</span>
+        <ul v-if="history.length" class="history-list">
+            <li v-for="(item, i) in history" :key="i" class="history-item animate-in">
+                <div>
+                    <span class="history-file">{{ item.filename }}</span>
+                    <span class="history-time">{{ item.created_at }}</span>
+                </div>
+                <span class="history-count">{{ item.count }} 个目标</span>
                 <span :class="riskClass(item.overall_risk)">{{ riskLabel(item.overall_risk) }}</span>
+                <span>{{ item.inference_time_ms || '-' }} ms</span>
             </li>
         </ul>
-        <ul v-else>
-            <li class="history-empty">暂无记录</li>
-        </ul>
+        <div v-else class="empty-block">暂无记录</div>
     </section>
     `
 }
 
-window.AppComponents = { AppHeader, ControlPanel, DisplayArea, StatsGrid, HistoryPanel }
+window.AppComponents = {
+    AppHeader,
+    ControlPanel,
+    DisplayArea,
+    StatsGrid,
+    RiskAnalysisPanel,
+    SafetyAdvicePanel,
+    SceneInsightPanel,
+    DemoScriptPanel,
+    SimulationPanel,
+    DashboardPanel,
+    ReportPanel,
+    SystemInfoPanel,
+    AlgorithmFlowPanel,
+    HistoryPanel,
+}
 window.RISK_STYLE_MAP = RISK_STYLE_MAP
+})()

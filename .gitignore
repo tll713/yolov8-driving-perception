@@ -65,8 +65,11 @@ dmypy.json
 # Jupyter and editor files
 .ipynb_checkpoints/
 .idea/
+.codex/
+.agents/
 
 .main
+.merkle-snapshot.json
 .vscode/
 .DS_Store
 tempCodeRunnerFile.py
@@ -77,6 +80,9 @@ results/*
 logs/*
 models/*.pt
 models/*.onnx
+*.sqlite
+*.sqlite3
+*.db
 
 !uploads/.gitkeep
 !results/.gitkeep
