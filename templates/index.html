@@ -5,27 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>自动驾驶目标检测与风险提示系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script>
-        window.__errors = [];
-        window.onerror = function(msg, url, line, col, err) {
-            window.__errors.push(msg + ' at ' + url + ':' + line + ':' + col);
-            showErrors();
-        };
-        window.addEventListener('unhandledrejection', function(e) {
-            window.__errors.push('Promise: ' + e.reason);
-            showErrors();
-        });
-        function showErrors() {
-            var el = document.getElementById('js-errors');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'js-errors';
-                el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#1a0000;color:#ff4444;padding:16px;font-size:14px;font-family:monospace;white-space:pre-wrap;max-height:50vh;overflow:auto;border-bottom:3px solid #ff4444;';
-                document.body.appendChild(el);
-            }
-            el.textContent = window.__errors.join('\n\n');
-        }
-    </script>
 </head>
 <body>
     <div id="app">
@@ -36,6 +15,7 @@
         <app-header
             :health-status="healthStatus"
             :model-info="modelInfo"
+            :current-user="currentUser"
         ></app-header>
 
         <main class="main">
@@ -53,6 +33,7 @@
                 :detections="detections"
                 :is-detecting="isDetecting"
                 :show-badge="showBadge"
+                :result-video-url="resultVideoUrl"
             ></display-area>
 
             <stats-grid
@@ -71,48 +52,8 @@
         </main>
     </div>
 
-    <script>
-        document.write('<div id="load-check" style="position:fixed;bottom:10px;right:10px;z-index:99999;background:#111;color:#0f0;padding:8px 14px;font-size:12px;font-family:monospace;border:1px solid #333;border-radius:4px;">Loading scripts...</div>');
-    </script>
     <script src="{{ url_for('static', filename='js/vue.global.prod.js') }}"></script>
-    <script>
-        (function(){
-            var ck = document.getElementById('load-check');
-            if (typeof Vue === 'undefined') {
-                ck.style.color = '#f44';
-                ck.textContent = 'ERROR: Vue is undefined! Script failed to load.';
-                return;
-            }
-            ck.textContent = 'Vue loaded OK. Loading components...';
-        })();
-    </script>
     <script src="{{ url_for('static', filename='js/components.js') }}"></script>
-    <script>
-        (function(){
-            var ck = document.getElementById('load-check');
-            if (!window.AppComponents) {
-                ck.style.color = '#f44';
-                ck.textContent = 'ERROR: AppComponents is undefined! components.js failed.';
-                return;
-            }
-            ck.textContent = 'Components OK. Loading app...';
-        })();
-    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-    <script>
-        (function(){
-            var ck = document.getElementById('load-check');
-            var appEl = document.getElementById('app');
-            var headerEl = document.querySelector('.header');
-            if (headerEl) {
-                ck.style.color = '#0f0';
-                ck.textContent = 'App mounted OK!';
-                setTimeout(function(){ ck.style.display = 'none'; }, 3000);
-            } else {
-                ck.style.color = '#f44';
-                ck.textContent = 'ERROR: Vue did not render. #app children: ' + appEl.innerHTML.substring(0, 200);
-            }
-        })();
-    </script>
 </body>
 </html>

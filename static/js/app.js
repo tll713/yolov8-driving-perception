@@ -9,8 +9,11 @@ const app = createApp({
         const isDetecting = ref(false)
         const showBadge = ref(false)
         const confidence = ref(null)
+        const resultVideoUrl = ref('')
         const healthStatus = ref(null)
         const modelInfo = ref(null)
+
+        const currentUser = ref(localStorage.getItem('currentUser') || '')
 
         const stats = reactive({
             totalCount: 0,
@@ -66,7 +69,6 @@ const app = createApp({
             return 'low'
         }
 
-
         function onFileSelected(file) {
             currentFile.value = file
             const reader = new FileReader()
@@ -83,6 +85,7 @@ const app = createApp({
             fileType.value = ''
             detections.value = []
             confidence.value = null
+            resultVideoUrl.value = ''
             stats.totalCount = 0
             stats.overallRisk = '—'
             stats.riskClass = 'risk-low'
@@ -102,7 +105,7 @@ const app = createApp({
             try {
                 const formData = new FormData()
                 formData.append('file', currentFile.value)
-                if (isImage) formData.append('confidence', 0.5)
+                formData.append('confidence', 0.5)
 
                 const res = await fetch(endpoint, { method: 'POST', body: formData })
                 const json = await res.json()
@@ -114,12 +117,9 @@ const app = createApp({
 
                 const data = json.data
 
-                if (!isImage) {
-                    alert('视频检测功能开发中')
-                    return
-                }
 
                 detections.value = data.detections || []
+                resultVideoUrl.value = data.result_video || ''
                 updateStats(data)
                 await fetchHistory()
 
@@ -159,8 +159,8 @@ const app = createApp({
 
         return {
             currentFile, filePreviewUrl, fileType, detections,
-            isDetecting, showBadge, confidence,
-            healthStatus, modelInfo, stats, historyList,
+            isDetecting, showBadge, confidence, resultVideoUrl,
+            healthStatus, modelInfo, stats, historyList, currentUser,
             onFileSelected, onClear, onDetect, onDownloadLog
         }
     }

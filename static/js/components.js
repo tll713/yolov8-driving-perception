@@ -10,11 +10,18 @@ const RISK_STYLE_MAP = {
 const AppHeader = {
     props: {
         healthStatus: Object,
-        modelInfo: Object
+        modelInfo: Object,
+        currentUser: String
     },
     computed: {
         statusText() {
             return this.healthStatus?.status === 'ok' ? '系统就绪' : '连接中...'
+        }
+    },
+    methods: {
+        handleLogout() {
+            localStorage.removeItem('currentUser')
+            window.location.href = '/login'
         }
     },
     template: `
@@ -32,9 +39,25 @@ const AppHeader = {
                     <span class="logo-sub" v-else>YOLOv8 Object Detection & Risk Assessment</span>
                 </div>
             </div>
-            <div class="header-status">
-                <span class="status-dot"></span>
-                <span class="status-text">{{ statusText }}</span>
+            <div class="header-right">
+                <div class="header-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">{{ statusText }}</span>
+                </div>
+                <div class="header-auth" v-if="currentUser">
+                    <div class="user-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                        </svg>
+                        <span>{{ currentUser }}</span>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" @click="handleLogout">退出</button>
+                </div>
+                <div class="header-auth" v-else>
+                    <a href="/login" class="btn btn-ghost btn-sm">登录</a>
+                    <a href="/register" class="btn btn-primary btn-sm">注册</a>
+                    <a href="/admin/login" class="btn btn-ghost btn-sm" style="color:#8b5cf6;border-color:rgba(139,92,246,0.2);">管理</a>
+                </div>
             </div>
         </div>
     </header>
@@ -118,10 +141,12 @@ const DisplayArea = {
         fileType: String,
         detections: Array,
         isDetecting: Boolean,
-        showBadge: Boolean
+        showBadge: Boolean,
+        resultVideoUrl: String
     },
     setup(props) {
         const canvasRef = ref(null)
+        const videoRef = ref(null)
 
         watch(() => props.detections, () => {
             if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
@@ -157,39 +182,40 @@ const DisplayArea = {
             img.src = props.filePreviewUrl
         }
 
-        return { canvasRef }
+        function downloadResult() {
+            if (props.fileType && props.fileType.startsWith('video/') && props.resultVideoUrl) {
+                const link = document.createElement('a')
+                link.download = 'detection_result.mp4'
+                link.href = props.resultVideoUrl
+                link.click()
+                return
+            }
+            const canvas = canvasRef.value
+            if (!canvas) return
+            const link = document.createElement('a')
+            link.download = 'detection_result.png'
+            link.href = canvas.toDataURL('image/png')
+            link.click()
+        }
+
+        return { canvasRef, videoRef, downloadResult }
     },
     template: `
     <section class="display-area">
-        <div class="panel">
-            <div class="panel-header">
-                <span class="panel-dot"></span>
-                <h3>原始画面</h3>
-            </div>
-            <div class="panel-body">
-                <template v-if="filePreviewUrl">
-                    <img v-if="fileType && fileType.startsWith('image/')" :src="filePreviewUrl" alt="原始图片" class="animate-in" />
-                    <video v-else-if="fileType && fileType.startsWith('video/')" controls autoplay muted class="animate-in">
-                        <source :src="filePreviewUrl" :type="fileType" />
-                    </video>
-                </template>
-                <div v-else class="placeholder">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                        <circle cx="8.5" cy="8.5" r="1.5"/>
-                        <polyline points="21 15 16 10 5 21"/>
-                    </svg>
-                    <p>请上传图片或视频</p>
-                </div>
-            </div>
-        </div>
-        <div class="panel panel-highlight">
+        <div class="panel panel-highlight" style="grid-column: 1 / -1;">
             <div class="panel-header">
                 <span class="panel-dot dot-accent"></span>
                 <h3>检测结果</h3>
                 <span v-if="showBadge" class="panel-badge">NEW</span>
+                <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    下载结果
+                </button>
             </div>
-            <div class="panel-body">
+            <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
                 <div v-if="isDetecting" class="placeholder">
                     <svg class="spin" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -199,11 +225,16 @@ const DisplayArea = {
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
                     <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
                 </template>
-                <div v-else-if="detections && detections.length && fileType && fileType.startsWith('video/')" class="detection-list animate-in">
-                    <div class="detect-item" v-for="(d, i) in detections" :key="i">
-                        <span class="detect-class">{{ d.class_name }}</span>
-                        <span class="detect-conf">{{ (d.confidence * 100).toFixed(1) }}%</span>
-                        <span class="detect-risk" :class="d.risk?.level || 'low'">{{ d.risk?.message || '' }}</span>
+                <div v-else-if="detections && detections.length && fileType && fileType.startsWith('video/')" class="video-result-wrap animate-in">
+                    <div class="video-canvas-wrap">
+                        <video ref="videoRef" :src="resultVideoUrl || filePreviewUrl" controls muted class="result-video"></video>
+                    </div>
+                    <div class="detection-list">
+                        <div class="detect-item" v-for="(d, i) in detections" :key="i">
+                            <span class="detect-class">{{ d.class_name }}</span>
+                            <span class="detect-conf">{{ (d.confidence * 100).toFixed(1) }}%</span>
+                            <span class="detect-risk" :class="d.risk?.level || 'low'">{{ d.risk?.message || '' }}</span>
+                        </div>
                     </div>
                 </div>
                 <div v-else class="placeholder">

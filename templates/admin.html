@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 自动驾驶感知系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon" style="background:linear-gradient(135deg, #8b5cf6, #ec4899);">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div class="logo-text">
+                    <h1>管理后台</h1>
+                    <span class="logo-sub">YOLOv8 System Admin</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="user-badge" id="admin-badge" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.2);color:#8b5cf6;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span id="admin-name">管理员</span>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="handleLogout()">退出</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <nav class="admin-nav">
+            <button class="admin-tab active" onclick="switchTab('confidence')">置信度阈值</button>
+            <button class="admin-tab" onclick="switchTab('records')">检测记录</button>
+            <button class="admin-tab" onclick="switchTab('status')">系统状态</button>
+            <button class="admin-tab" onclick="switchTab('logs')">错误日志</button>
+        </nav>
+
+        <!-- 置信度阈值 -->
+        <section class="admin-section" id="tab-confidence">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3>设置置信度阈值</h3>
+                    <span class="admin-card-desc">后续所有检测结果将按此阈值过滤显示</span>
+                </div>
+                <div class="admin-card-body">
+                    <div class="confidence-control">
+                        <div class="confidence-display">
+                            <span class="confidence-label">当前阈值</span>
+                            <span class="confidence-value" id="confidence-value">0.50</span>
+                        </div>
+                        <input type="range" id="confidence-slider" min="0" max="100" value="50" class="confidence-slider" oninput="onSliderChange(this.value)">
+                        <div class="confidence-input-row">
+                            <input type="number" id="confidence-input" class="form-input" min="0" max="1" step="0.01" value="0.50" style="max-width:120px;" oninput="onInputChange(this.value)">
+                            <button class="btn btn-primary btn-sm" onclick="saveConfidence()" style="background:linear-gradient(135deg, #8b5cf6, #ec4899);">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 检测记录 -->
+        <section class="admin-section" id="tab-records" style="display:none;">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3>所有检测记录</h3>
+                    <span class="admin-card-desc" id="records-count">共 0 条记录</span>
+                </div>
+                <div class="admin-card-body">
+                    <div class="admin-table-wrap">
+                        <table class="admin-table" id="records-table">
+                            <thead>
+                                <tr><th>序号</th><th>时间</th><th>文件名</th><th>检测数</th><th>风险</th><th>操作</th></tr>
+                            </thead>
+                            <tbody id="records-body"></tbody>
+                        </table>
+                        <div class="placeholder" id="records-empty" style="display:none;"><p>暂无检测记录</p></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 系统状态 -->
+        <section class="admin-section" id="tab-status" style="display:none;">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3>系统运行状态</h3>
+                    <button class="btn btn-ghost btn-sm" onclick="loadStatus()">刷新</button>
+                </div>
+                <div class="admin-card-body">
+                    <div class="status-grid" id="status-grid"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 错误日志 -->
+        <section class="admin-section" id="tab-logs" style="display:none;">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3>错误日志</h3>
+                    <span class="admin-card-desc" id="logs-count">共 0 条</span>
+                </div>
+                <div class="admin-card-body">
+                    <div class="admin-table-wrap">
+                        <table class="admin-table" id="logs-table">
+                            <thead>
+                                <tr><th>ID</th><th>级别</th><th>时间</th><th>信息</th><th>操作</th></tr>
+                            </thead>
+                            <tbody id="logs-body"></tbody>
+                        </table>
+                        <div class="placeholder" id="logs-empty" style="display:none;"><p>当前无错误记录</p></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        var adminUser = localStorage.getItem('adminUser');
+        if (!adminUser) { window.location.href = '/admin/login'; }
+        else { document.getElementById('admin-name').textContent = adminUser; }
+
+        function handleLogout() {
+            localStorage.removeItem('adminUser');
+            window.location.href = '/admin/login';
+        }
+
+        function switchTab(name) {
+            document.querySelectorAll('.admin-section').forEach(function(s) { s.style.display = 'none'; });
+            document.querySelectorAll('.admin-tab').forEach(function(t) { t.classList.remove('active'); });
+            document.getElementById('tab-' + name).style.display = '';
+            event.target.classList.add('active');
+            if (name === 'records') loadRecords();
+            if (name === 'status') loadStatus();
+            if (name === 'logs') loadLogs();
+        }
+
+        // === 置信度 ===
+        function loadConfidence() {
+            fetch('/api/admin/confidence').then(function(r){return r.json()}).then(function(d){
+                if(d.code===0){ updateConfidenceUI(d.data.confidence); }
+            });
+        }
+        function updateConfidenceUI(v) {
+            document.getElementById('confidence-value').textContent = v.toFixed(2);
+            document.getElementById('confidence-slider').value = Math.round(v * 100);
+            document.getElementById('confidence-input').value = v.toFixed(2);
+        }
+        function onSliderChange(v) {
+            var val = (parseInt(v) / 100).toFixed(2);
+            document.getElementById('confidence-input').value = val;
+            document.getElementById('confidence-value').textContent = val;
+        }
+        function onInputChange(v) {
+            var val = parseFloat(v);
+            if (isNaN(val)) return;
+            if (val < 0) val = 0; if (val > 1) val = 1;
+            document.getElementById('confidence-slider').value = Math.round(val * 100);
+            document.getElementById('confidence-value').textContent = val.toFixed(2);
+        }
+        function saveConfidence() {
+            var val = parseFloat(document.getElementById('confidence-input').value);
+            if (isNaN(val)) { alert('请输入有效数值'); return; }
+            fetch('/api/admin/confidence', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({confidence: val})
+            }).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0){ updateConfidenceUI(d.data.confidence); alert('阈值已更新为 ' + d.data.confidence); }
+                else { alert(d.message || '更新失败'); }
+            });
+        }
+
+        // === 记录管理 ===
+        function loadRecords() {
+            fetch('/api/admin/records').then(function(r){return r.json()}).then(function(d){
+                if(d.code!==0) return;
+                var items = d.data.items || [];
+                document.getElementById('records-count').textContent = '共 ' + items.length + ' 条记录';
+                var tbody = document.getElementById('records-body');
+                var empty = document.getElementById('records-empty');
+                if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+                empty.style.display = 'none';
+                tbody.innerHTML = items.map(function(item, i){
+                    return '<tr><td>'+(i+1)+'</td><td>'+(item.created_at||'')+'</td><td>'+(item.filename||'')+'</td><td>'+(item.count||0)+'</td><td>'+(item.overall_risk||'—')+'</td><td><button class="btn btn-ghost btn-sm" onclick="deleteRecord('+i+')">删除</button></td></tr>';
+                }).join('');
+            });
+        }
+        function deleteRecord(id) {
+            if (!confirm('确认删除此记录？')) return;
+            fetch('/api/admin/records/' + id, {method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0) loadRecords(); else alert(d.message||'删除失败');
+            });
+        }
+
+        // === 系统状态 ===
+        function loadStatus() {
+            fetch('/api/admin/system-status').then(function(r){return r.json()}).then(function(d){
+                if(d.code!==0) return;
+                var s = d.data;
+                var grid = document.getElementById('status-grid');
+                grid.innerHTML = [
+                    statusCard('CPU 占用', s.cpu_percent + '%', s.cpu_percent > 80 ? 'high' : 'normal'),
+                    statusCard('内存使用', s.memory_percent + '% (' + s.memory_used + ')', s.memory_percent > 80 ? 'high' : 'normal'),
+                    statusCard('磁盘使用', s.disk_percent + '% (' + s.disk_used + ')', s.disk_percent > 90 ? 'high' : 'normal'),
+                    statusCard('GPU', s.gpu, 'normal'),
+                    statusCard('系统平台', s.platform, 'normal'),
+                    statusCard('Python 版本', s.python_version, 'normal'),
+                    statusCard('运行时间', s.uptime, 'normal'),
+                    statusCard('服务状态', s.status === 'running' ? '运行中' : '异常', s.status === 'running' ? 'normal' : 'high'),
+                ].join('');
+            });
+        }
+        function statusCard(label, value, level) {
+            var color = level === 'high' ? 'var(--red)' : 'var(--green)';
+            return '<div class="status-item"><span class="status-label">'+label+'</span><span class="status-val" style="color:'+color+'">'+value+'</span></div>';
+        }
+
+        // === 错误日志 ===
+        function loadLogs() {
+            fetch('/api/admin/error-logs').then(function(r){return r.json()}).then(function(d){
+                if(d.code!==0) return;
+                var items = d.data.items || [];
+                document.getElementById('logs-count').textContent = '共 ' + items.length + ' 条';
+                var tbody = document.getElementById('logs-body');
+                var empty = document.getElementById('logs-empty');
+                if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+                empty.style.display = 'none';
+                tbody.innerHTML = items.map(function(l){
+                    var lvlColor = l.level === 'ERROR' ? 'var(--red)' : l.level === 'WARN' ? 'var(--yellow)' : 'var(--accent)';
+                    return '<tr><td>'+l.id+'</td><td style="color:'+lvlColor+'">'+l.level+'</td><td>'+(l.created_at||'')+'</td><td>'+(l.message||'')+'</td><td><button class="btn btn-ghost btn-sm" onclick="deleteLog('+l.id+')">删除</button></td></tr>';
+                }).join('');
+            });
+        }
+        function deleteLog(id) {
+            fetch('/api/admin/error-logs/' + id, {method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0) loadLogs();
+            });
+        }
+
+        // 初始化
+        loadConfidence();
+    </script>
+</body>
+</html>
