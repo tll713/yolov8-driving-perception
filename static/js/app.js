@@ -12,6 +12,8 @@ const app = createApp({
         const isDetecting = ref(false)
         const showBadge = ref(false)
         const confidence = ref(null)
+        const resultVideoUrl = ref('')
+        const resultImageUrl = ref('')
         const healthStatus = ref(null)
         const modelInfo = ref(null)
         const safetyAdvice = ref([])
@@ -130,6 +132,12 @@ const app = createApp({
             detections.value = []
             videoFrames.value = []
             resultVideoUrl.value = ''
+            resultImageUrl.value = ''
+            stats.totalCount = 0
+            stats.overallRisk = '—'
+            stats.riskClass = 'risk-low'
+            stats.inferenceTime = '— ms'
+            stats.classCounts = {}
             safetyAdvice.value = []
             sceneSummary.value = null
             decisionTrace.value = []
@@ -165,6 +173,8 @@ const app = createApp({
 
                 const data = json.data
                 resultVideoUrl.value = data.result_video || ''
+                resultImageUrl.value = data.result_path ? '/results/' + (data.result_filename || '') : ''
+                updateStats(data)
                 videoFrames.value = data.frames || []
                 detections.value = isImage
                     ? (data.detections || [])
@@ -198,6 +208,7 @@ const app = createApp({
             stats.overallRisk = riskInfo.label
             stats.riskClass = riskInfo.cls
 
+            stats.inferenceTime = data.inference_time_ms ? `${data.inference_time_ms} ms` : '— ms'
             stats.inferenceTime = data.inference_time_ms ? `${data.inference_time_ms} ms` : '- ms'
             stats.riskCounts = data.risk_counts || summarizeRiskCounts(detList)
             stats.maxRiskScore = data.max_risk_score || maxRiskScore(detList)
@@ -328,6 +339,10 @@ const app = createApp({
         }
 
         return {
+            currentFile, filePreviewUrl, fileType, detections,
+            isDetecting, showBadge, confidence, resultVideoUrl, resultImageUrl,
+            healthStatus, modelInfo, stats, historyList, currentUser,
+            onFileSelected, onClear, onDetect, onDownloadLog
             currentFile, filePreviewUrl, fileType, detections, videoFrames, resultVideoUrl,
             isDetecting, showBadge, confidence,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
