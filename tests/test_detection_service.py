@@ -69,6 +69,10 @@ class DetectionServiceTest(unittest.TestCase):
         self.assertEqual(result["risk_counts"]["high"], 1)
         self.assertEqual(result["result_filename"], "road_result.jpg")
         self.assertEqual(result["detections"][0]["risk_level"], "high")
+        self.assertIn("scene_type", result["scene_summary"])
+        self.assertGreaterEqual(len(result["decision_trace"]), 4)
+        self.assertTrue(result["demo_script"])
+        self.assertTrue(result["safety_advice"])
         append_history.assert_called_once()
 
 

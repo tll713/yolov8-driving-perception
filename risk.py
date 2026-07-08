@@ -9,30 +9,145 @@ RISK_LABELS = {
     "stop sign": "停止标志",
 }
 
-HIGH_RISK_CLASSES = {"person", "bicycle", "motorcycle"}
+VULNERABLE_CLASSES = {"person", "bicycle", "motorcycle"}
 VEHICLE_CLASSES = {"car", "bus", "truck"}
 TRAFFIC_INFO_CLASSES = {"traffic light", "stop sign"}
 RISK_PRIORITY = {"low": 0, "info": 1, "medium": 2, "high": 3}
 
+CLASS_RISK_SCORE = {
+    "person": 34,
+    "bicycle": 32,
+    "motorcycle": 32,
+    "truck": 27,
+    "bus": 25,
+    "car": 22,
+}
+
+
+def _clamp(value, minimum=0, maximum=100):
+    return max(minimum, min(maximum, value))
+
+
+def _zone(center_x, center_y, image_width, image_height):
+    horizontal = "center"
+    if center_x < image_width * 0.33:
+        horizontal = "left"
+    elif center_x > image_width * 0.67:
+        horizontal = "right"
+
+    vertical = "middle"
+    if center_y < image_height * 0.33:
+        vertical = "upper"
+    elif center_y > image_height * 0.66:
+        vertical = "lower"
+
+    return f"{vertical}-{horizontal}"
+
+
+def _driving_corridor_bounds(y, image_width, image_height):
+    y_ratio = _clamp(y / max(1, image_height), 0, 1)
+    center = image_width * 0.5
+    half_width_ratio = 0.12 + 0.28 * y_ratio
+    half_width = image_width * half_width_ratio
+    return center - half_width, center + half_width
+
+
+def _lane_overlap(x1, x2, bottom_y, image_width, image_height):
+    lane_left, lane_right = _driving_corridor_bounds(bottom_y, image_width, image_height)
+    overlap = max(0, min(x2, lane_right) - max(x1, lane_left))
+    box_width = max(1, x2 - x1)
+    return round(_clamp(overlap / box_width, 0, 1), 4)
+
 
 def _bbox_features(bbox, image_width, image_height):
     x1, y1, x2, y2 = bbox
-    box_area = max(0, x2 - x1) * max(0, y2 - y1)
+    box_width = max(0, x2 - x1)
+    box_height = max(0, y2 - y1)
+    box_area = box_width * box_height
     image_area = max(1, image_width * image_height)
     center_x = (x1 + x2) / 2
     center_y = (y1 + y2) / 2
+    bottom_y = max(y1, y2)
+    area_ratio = box_area / image_area
+    lane_overlap = _lane_overlap(x1, x2, bottom_y, image_width, image_height)
+    bottom_ratio = _clamp(bottom_y / max(1, image_height), 0, 1)
+
+    distance_score = _clamp(round(bottom_ratio * 62 + min(area_ratio * 260, 28)))
+    position_score = _clamp(round(lane_overlap * 36 + (12 if bottom_ratio >= 0.58 else 0)))
+    proximity_score = _clamp(round(distance_score * 0.65 + position_score * 0.35))
+
     return {
         "bbox_area": box_area,
         "center_x": round(center_x, 2),
         "center_y": round(center_y, 2),
-        "area_ratio": round(box_area / image_area, 6),
-        "in_center": image_width * 0.35 <= center_x <= image_width * 0.65,
-        "in_lower": center_y >= image_height * 0.5,
+        "bottom_y": round(bottom_y, 2),
+        "area_ratio": round(area_ratio, 6),
+        "zone": _zone(center_x, center_y, image_width, image_height),
+        "lane_overlap": lane_overlap,
+        "distance_score": distance_score,
+        "position_score": position_score,
+        "proximity_score": proximity_score,
     }
+
+
+def _confidence_score(confidence):
+    return _clamp(round((confidence - 0.25) / 0.65 * 30), 0, 30)
+
+
+def _score_detection(class_name, confidence, features):
+    class_risk_score = CLASS_RISK_SCORE.get(class_name, 10)
+    confidence_score = _confidence_score(confidence)
+    raw_score = (
+        class_risk_score
+        + features["distance_score"] * 0.42
+        + features["position_score"] * 0.58
+        + confidence_score
+    )
+
+    if features["lane_overlap"] < 0.35:
+        raw_score -= 20
+    if confidence < 0.4:
+        raw_score -= 18
+
+    return _clamp(round(raw_score))
+
+
+def _level_from_score(class_name, score, lane_overlap, confidence):
+    if class_name in TRAFFIC_INFO_CLASSES:
+        return "info"
+    if score >= 78 and lane_overlap >= 0.35 and confidence >= 0.4:
+        return "high"
+    if score >= 42:
+        return "medium"
+    return "low"
+
+
+def _reason_parts(class_name, confidence, features):
+    parts = [f"检测到 {class_name or 'unknown'}"]
+    if features["lane_overlap"] >= 0.65:
+        parts.append("目标与自车行驶路径高度重叠")
+    elif features["lane_overlap"] >= 0.35:
+        parts.append("目标接近自车行驶路径")
+    else:
+        parts.append("目标主要位于侧向区域")
+
+    if features["distance_score"] >= 68:
+        parts.append("目标底部靠近画面下方，估计距离较近")
+    elif features["distance_score"] >= 45:
+        parts.append("目标处于中等距离")
+    else:
+        parts.append("目标距离相对较远")
+
+    if features["area_ratio"] >= 0.12:
+        parts.append("目标面积占比较大")
+    if confidence < 0.4:
+        parts.append("置信度偏低，风险等级已降权")
+    return parts
 
 
 def assess_detection(detection, image_width, image_height):
     class_name = detection.get("class_name", "")
+    confidence = float(detection.get("confidence", 0))
     bbox = detection.get("bbox", [0, 0, 0, 0])
     features = _bbox_features(bbox, image_width, image_height)
     label = RISK_LABELS.get(class_name, class_name or "目标")
@@ -40,37 +155,37 @@ def assess_detection(detection, image_width, image_height):
     if class_name in TRAFFIC_INFO_CLASSES:
         return {
             "level": "info",
-            "message": f"前方检测到{label}，请注意交通信息",
-            "reason": f"检测到交通设施 {class_name}，作为驾驶提示信息展示",
+            "score": 20,
+            "class_risk_score": 0,
+            "confidence_score": _confidence_score(confidence),
+            "distance_score": features["distance_score"],
+            "position_score": features["position_score"],
+            "lane_overlap": features["lane_overlap"],
+            "message": f"交通提示：前方检测到{label}",
+            "reason": f"检测到交通设施 {class_name}，作为驾驶提示信息展示，不计入碰撞风险",
         }
 
-    if class_name in HIGH_RISK_CLASSES and features["in_center"] and features["in_lower"]:
-        return {
-            "level": "high",
-            "message": f"高风险：前方中央区域检测到{label}",
-            "reason": f"检测到 {class_name}，且目标中心位于画面下半部分的中央区域",
-        }
+    score = _score_detection(class_name, confidence, features)
+    level = _level_from_score(class_name, score, features["lane_overlap"], confidence)
+    reason = "；".join(_reason_parts(class_name, confidence, features))
 
-    if class_name in VEHICLE_CLASSES and (
-        features["area_ratio"] >= 0.15 or (features["in_center"] and features["in_lower"])
-    ):
-        return {
-            "level": "high",
-            "message": f"高风险：前方{label}距离较近",
-            "reason": f"检测到 {class_name}，目标面积占比较大或位于前方关键区域",
-        }
-
-    if class_name in HIGH_RISK_CLASSES or class_name in VEHICLE_CLASSES:
-        return {
-            "level": "medium",
-            "message": f"中风险：画面中检测到{label}",
-            "reason": f"检测到道路参与者 {class_name}，但未处于高风险区域",
-        }
+    if level == "high":
+        message = f"高风险：前方行驶路径内检测到{label}"
+    elif level == "medium":
+        message = f"中风险：周边道路区域检测到{label}"
+    else:
+        message = f"低风险：检测到{label}"
 
     return {
-        "level": "low",
-        "message": f"低风险：检测到{label}",
-        "reason": f"检测到 {class_name or 'unknown'}，当前规则判定风险较低",
+        "level": level,
+        "score": score,
+        "class_risk_score": CLASS_RISK_SCORE.get(class_name, 10),
+        "confidence_score": _confidence_score(confidence),
+        "distance_score": features["distance_score"],
+        "position_score": features["position_score"],
+        "lane_overlap": features["lane_overlap"],
+        "message": message,
+        "reason": reason,
     }
 
 
@@ -88,9 +203,16 @@ def assess_detections(detections, image_width, image_height):
                 "bbox_area": features["bbox_area"],
                 "center_x": features["center_x"],
                 "center_y": features["center_y"],
+                "bottom_y": features["bottom_y"],
                 "area_ratio": features["area_ratio"],
+                "zone": features["zone"],
+                "lane_overlap": features["lane_overlap"],
+                "distance_score": features["distance_score"],
+                "position_score": features["position_score"],
+                "proximity_score": features["proximity_score"],
                 "risk": risk,
                 "risk_level": risk["level"],
+                "risk_score": risk["score"],
                 "risk_message": risk["message"],
                 "risk_reason": risk["reason"],
             }
@@ -101,14 +223,19 @@ def assess_detections(detections, image_width, image_height):
 def summarize_risk(detections):
     counts = {"low": 0, "info": 0, "medium": 0, "high": 0}
     max_level = "low"
+    max_score = 0
 
     for detection in detections:
-        level = detection.get("risk", {}).get("level", "low")
+        risk = detection.get("risk", {})
+        level = risk.get("level", "low")
+        score = risk.get("score", detection.get("risk_score", 0))
         counts[level] = counts.get(level, 0) + 1
         if RISK_PRIORITY.get(level, 0) > RISK_PRIORITY.get(max_level, 0):
             max_level = level
+        max_score = max(max_score, score)
 
     return {
         "max_risk_level": max_level,
+        "max_risk_score": max_score,
         "risk_counts": counts,
     }

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 try:
@@ -21,8 +22,12 @@ HISTORY_FILE = LOG_DIR / "detection_history.json"
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 DEFAULT_CONFIDENCE = 0.5
-
-import os
+DEFAULT_INFERENCE_MODE = os.getenv("YOLO_INFERENCE_MODE", "balanced").strip().lower()
+DEFAULT_IMAGE_SIZE = int(os.getenv("YOLO_IMAGE_SIZE", "640"))
+DEFAULT_REFINE_IMAGE_SIZE = int(os.getenv("YOLO_REFINE_IMAGE_SIZE", "960"))
+DEFAULT_REFINE_MIN_SIZE = int(os.getenv("YOLO_REFINE_MIN_SIZE", "1280"))
+DEFAULT_REFINE_CONFIDENCE = float(os.getenv("YOLO_REFINE_CONFIDENCE", "0.45"))
+DEFAULT_DEVICE = os.getenv("YOLO_DEVICE", "").strip() or None
 
 DB_HOST = os.getenv("DB_HOST", "10.149.89.160")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))

@@ -9,8 +9,11 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(API_ENDPOINTS["image_detection"], "/api/detections/images")
         self.assertEqual(API_ENDPOINTS["video_detection"], "/api/detections/videos")
         self.assertEqual(API_ENDPOINTS["history"], "/api/detections/history")
+        self.assertEqual(API_ENDPOINTS["history_clear"], "/api/detections/history/clear")
         self.assertEqual(API_ENDPOINTS["detection_record"], "/api/detections/records/<record_id>")
         self.assertEqual(API_ENDPOINTS["model_info"], "/api/models/current")
+        self.assertEqual(API_ENDPOINTS["simulation_presets"], "/api/simulation/presets")
+        self.assertEqual(API_ENDPOINTS["simulation_risk"], "/api/simulation/risk")
 
     def test_success_response_has_stable_shape(self):
         response = build_success_response({"count": 2})
@@ -20,10 +23,10 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(response["data"], {"count": 2})
 
     def test_error_response_has_stable_shape(self):
-        response = build_error_response("文件格式不支持", code=400)
+        response = build_error_response("invalid file type", code=400)
 
         self.assertEqual(response["code"], 400)
-        self.assertEqual(response["message"], "文件格式不支持")
+        self.assertEqual(response["message"], "invalid file type")
         self.assertIsNone(response["data"])
 
 
