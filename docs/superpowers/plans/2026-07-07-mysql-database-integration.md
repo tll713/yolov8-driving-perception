@@ -96,7 +96,7 @@ If MySQL fails or returns no rows, read `logs/detection_history.json` exactly as
 
 - [ ] **Step 1: Run unit tests**
 
-Run `C:\Users\32079\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests`.
+Run `python -m unittest discover -s tests`.
 
 - [ ] **Step 2: Optional live check**
 

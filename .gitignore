@@ -69,6 +69,7 @@ dmypy.json
 .agents/
 
 .main
+.merkle-snapshot.json
 .vscode/
 .DS_Store
 tempCodeRunnerFile.py
