@@ -29,7 +29,7 @@ DEFAULT_REFINE_MIN_SIZE = int(os.getenv("YOLO_REFINE_MIN_SIZE", "1280"))
 DEFAULT_REFINE_CONFIDENCE = float(os.getenv("YOLO_REFINE_CONFIDENCE", "0.45"))
 DEFAULT_DEVICE = os.getenv("YOLO_DEVICE", "").strip() or None
 
-DB_HOST = os.getenv("DB_HOST", "10.149.89.160")
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "admin")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Connect the YOLOv8 driving perception backend to the existing MySQL database `yolov8_driving` on `10.149.89.160`, using environment variables for credentials and writing each completed image detection into the provided tables.
+Connect the YOLOv8 driving perception backend to a MySQL database, using environment variables for credentials and writing each completed image detection into the provided tables.
 
 ## Current State
 
@@ -17,10 +17,10 @@ Use a small MySQL service module, called from `backend/services/detection_servic
 Database settings come from `.env`:
 
 ```env
-DB_HOST=10.149.89.160
+DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_USER=admin
-DB_PASSWORD=123456
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
 DB_NAME=yolov8_driving
 ```
 

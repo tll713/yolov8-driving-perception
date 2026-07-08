@@ -37,7 +37,7 @@ Add `PyMySQL>=1.1.0` and `python-dotenv>=1.0.0` to `requirements.txt`.
 
 - [ ] **Step 3: Add `.env.example`**
 
-Document `DB_HOST=10.149.89.160`, `DB_PORT=3306`, `DB_USER=admin`, `DB_PASSWORD=123456`, and `DB_NAME=yolov8_driving`.
+Document `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_USER=your_db_user`, `DB_PASSWORD=your_db_password`, and `DB_NAME=yolov8_driving`.
 
 ### Task 2: Database Service
 
