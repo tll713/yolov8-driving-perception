@@ -142,46 +142,10 @@ const DisplayArea = {
         detections: Array,
         isDetecting: Boolean,
         showBadge: Boolean,
-        resultVideoUrl: String
+        resultVideoUrl: String,
+        resultImageUrl: String
     },
     setup(props) {
-        const canvasRef = ref(null)
-        const videoRef = ref(null)
-
-        watch(() => props.detections, () => {
-            if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
-                nextTick(() => drawBoxes())
-            }
-        })
-
-        function drawBoxes() {
-            const canvas = canvasRef.value
-            if (!canvas) return
-            const ctx = canvas.getContext('2d')
-            const img = new Image()
-            img.onload = () => {
-                canvas.width = img.width
-                canvas.height = img.height
-                ctx.drawImage(img, 0, 0)
-                props.detections.forEach(d => {
-                    const [x1, y1, x2, y2] = d.bbox
-                    const risk = d.risk || {}
-                    const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
-                    ctx.strokeStyle = color
-                    ctx.lineWidth = 2
-                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
-                    const label = d.class_name + ' ' + (d.confidence * 100).toFixed(0) + '%'
-                    ctx.font = '14px JetBrains Mono, monospace'
-                    const tw = ctx.measureText(label).width
-                    ctx.fillStyle = color
-                    ctx.fillRect(x1, y1 - 20, tw + 10, 20)
-                    ctx.fillStyle = '#fff'
-                    ctx.fillText(label, x1 + 5, y1 - 5)
-                })
-            }
-            img.src = props.filePreviewUrl
-        }
-
         function downloadResult() {
             if (props.fileType && props.fileType.startsWith('video/') && props.resultVideoUrl) {
                 const link = document.createElement('a')
@@ -190,15 +154,16 @@ const DisplayArea = {
                 link.click()
                 return
             }
-            const canvas = canvasRef.value
-            if (!canvas) return
-            const link = document.createElement('a')
-            link.download = 'detection_result.png'
-            link.href = canvas.toDataURL('image/png')
-            link.click()
+            if (props.resultImageUrl) {
+                const link = document.createElement('a')
+                link.download = 'detection_result.png'
+                link.href = props.resultImageUrl
+                link.click()
+                return
+            }
         }
 
-        return { canvasRef, videoRef, downloadResult }
+        return { downloadResult }
     },
     template: `
     <section class="display-area">
@@ -222,8 +187,8 @@ const DisplayArea = {
                     </svg>
                     <p>正在分析...</p>
                 </div>
-                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
-                    <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
+                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
+                    <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
                 </template>
                 <div v-else-if="detections && detections.length && fileType && fileType.startsWith('video/')" class="video-result-wrap animate-in">
                     <div class="video-canvas-wrap">

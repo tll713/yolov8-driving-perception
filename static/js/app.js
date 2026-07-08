@@ -10,6 +10,7 @@ const app = createApp({
         const showBadge = ref(false)
         const confidence = ref(null)
         const resultVideoUrl = ref('')
+        const resultImageUrl = ref('')
         const healthStatus = ref(null)
         const modelInfo = ref(null)
 
@@ -86,6 +87,7 @@ const app = createApp({
             detections.value = []
             confidence.value = null
             resultVideoUrl.value = ''
+            resultImageUrl.value = ''
             stats.totalCount = 0
             stats.overallRisk = '—'
             stats.riskClass = 'risk-low'
@@ -120,6 +122,7 @@ const app = createApp({
 
                 detections.value = data.detections || []
                 resultVideoUrl.value = data.result_video || ''
+                resultImageUrl.value = data.result_path ? '/results/' + (data.result_filename || '') : ''
                 updateStats(data)
                 await fetchHistory()
 
@@ -143,7 +146,7 @@ const app = createApp({
             stats.overallRisk = riskInfo.label
             stats.riskClass = riskInfo.cls
 
-            stats.inferenceTime = data.inference_time ? `${data.inference_time} ms` : '— ms'
+            stats.inferenceTime = data.inference_time_ms ? `${data.inference_time_ms} ms` : '— ms'
 
             const counts = {}
             detList.forEach(d => {
@@ -159,7 +162,7 @@ const app = createApp({
 
         return {
             currentFile, filePreviewUrl, fileType, detections,
-            isDetecting, showBadge, confidence, resultVideoUrl,
+            isDetecting, showBadge, confidence, resultVideoUrl, resultImageUrl,
             healthStatus, modelInfo, stats, historyList, currentUser,
             onFileSelected, onClear, onDetect, onDownloadLog
         }
