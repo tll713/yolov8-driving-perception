@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
 from backend.config import DEFAULT_CONFIDENCE
-from backend.services.detection_service import detect_uploaded_image, prepare_video_detection
+from backend.services.detection_service import detect_uploaded_image, detect_uploaded_video
 from backend.services.history_service import list_history
 
 
@@ -35,17 +35,16 @@ def detect_video_endpoint():
         return jsonify(build_error_response("请上传视频文件", 400)), 400
 
     try:
-        result = prepare_video_detection(upload)
+        confidence = float(request.form.get("confidence", DEFAULT_CONFIDENCE))
+        result = detect_uploaded_video(upload, confidence=confidence)
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
+    except RuntimeError as exc:
+        return jsonify(build_error_response(str(exc), 503)), 503
+    except Exception as exc:
+        return jsonify(build_error_response(f"检测失败：{exc}", 500)), 500
 
-    return jsonify(
-        build_error_response(
-            "视频检测接口已预留，后续接入逐帧检测和结果视频生成",
-            501,
-            result,
-        )
-    ), 501
+    return jsonify(build_success_response(result))
 
 
 @detections_bp.get("/detections/history")
