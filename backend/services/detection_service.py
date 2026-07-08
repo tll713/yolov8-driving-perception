@@ -8,6 +8,7 @@ from backend.config import (
     RESULT_DIR,
     UPLOAD_DIR,
 )
+from backend.services.database_service import save_detection_result
 from backend.services.history_service import append_history
 from backend.services.result_renderer import render_detection_image
 from detect import detect_image, load_model
@@ -64,6 +65,12 @@ def detect_uploaded_image(upload, confidence=0.5):
         **risk_summary,
         "detections": detections,
     }
+    try:
+        result["record_id"] = save_detection_result(result)
+    except Exception:
+        result["database_saved"] = False
+    else:
+        result["database_saved"] = True
     append_history(result)
     return result
 

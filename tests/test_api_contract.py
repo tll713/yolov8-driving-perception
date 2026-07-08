@@ -9,6 +9,7 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(API_ENDPOINTS["image_detection"], "/api/detections/images")
         self.assertEqual(API_ENDPOINTS["video_detection"], "/api/detections/videos")
         self.assertEqual(API_ENDPOINTS["history"], "/api/detections/history")
+        self.assertEqual(API_ENDPOINTS["detection_record"], "/api/detections/records/<record_id>")
         self.assertEqual(API_ENDPOINTS["model_info"], "/api/models/current")
 
     def test_success_response_has_stable_shape(self):

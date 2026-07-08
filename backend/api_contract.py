@@ -3,6 +3,7 @@ API_ENDPOINTS = {
     "image_detection": "/api/detections/images",
     "video_detection": "/api/detections/videos",
     "history": "/api/detections/history",
+    "detection_record": "/api/detections/records/<record_id>",
     "model_info": "/api/models/current",
 }
 

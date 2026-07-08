@@ -2,9 +2,17 @@ import json
 from datetime import datetime
 
 from backend.config import HISTORY_FILE
+from backend.services.database_service import list_detection_history
 
 
 def list_history():
+    try:
+        db_items = list_detection_history()
+        if db_items:
+            return db_items
+    except Exception:
+        pass
+
     if not HISTORY_FILE.exists():
         return []
 
