@@ -35,7 +35,7 @@ const AppHeader = {
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1>自动驾驶场景风险感知系统</h1>
+                    <h1>自动驾驶感知与仿真系统</h1>
                     <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.inference_mode }} · {{ modelInfo.device }}</span>
                     <span class="logo-sub" v-else>YOLOv8 Detection & Driving Risk Assessment</span>
                 </div>
