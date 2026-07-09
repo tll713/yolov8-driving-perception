@@ -116,9 +116,6 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    model = get_model(DEFAULT_MODEL_PATH)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
     model = get_model(DEFAULT_MODEL_PATH)

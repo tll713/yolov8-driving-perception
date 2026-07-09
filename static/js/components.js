@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
 const { ref, watch, nextTick, onBeforeUnmount } = Vue
 
 const RISK_STYLE_MAP = {
@@ -136,16 +136,9 @@ const DisplayArea = {
         resultImageUrl: String
     },
     setup(props) {
-        const canvasRef = ref(null)
         const videoRef = ref(null)
         const videoOverlayRef = ref(null)
         const videoOverlayFrameId = ref(null)
-
-        watch(() => [props.detections, props.filePreviewUrl], () => {
-            if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
-                nextTick(() => drawBoxes())
-            }
-        }, { deep: true })
 
         watch(() => [props.detectionTimeline, props.resultVideoUrl, props.filePreviewUrl], () => {
             if (props.fileType && props.fileType.startsWith('video/')) {
@@ -154,56 +147,6 @@ const DisplayArea = {
         }, { deep: true })
 
         onBeforeUnmount(() => stopVideoOverlayLoop())
-
-        function drawBoxes() {
-            const canvas = canvasRef.value
-            if (!canvas) return
-            const ctx = canvas.getContext('2d')
-            const img = new Image()
-            img.onload = () => {
-                canvas.width = img.width
-                canvas.height = img.height
-                ctx.drawImage(img, 0, 0)
-                drawDrivingCorridor(ctx, canvas.width, canvas.height)
-                props.detections.forEach(d => {
-                    const [x1, y1, x2, y2] = d.bbox
-                    const risk = d.risk || {}
-                    const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
-                    ctx.strokeStyle = color
-                    ctx.lineWidth = 3
-                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
-                    const label = `${d.class_name_cn || d.class_name} ${(d.confidence * 100).toFixed(0)}% ${risk.score || 0}`
-                    ctx.font = '14px JetBrains Mono, monospace'
-                    const tw = ctx.measureText(label).width
-                    ctx.fillStyle = color
-                    ctx.fillRect(x1, Math.max(0, y1 - 22), tw + 10, 22)
-                    ctx.fillStyle = '#fff'
-                    ctx.fillText(label, x1 + 5, Math.max(14, y1 - 6))
-                })
-            }
-            img.src = props.filePreviewUrl
-        }
-
-        function drawDrivingCorridor(ctx, width, height) {
-            const nearLeft = width * 0.1
-            const nearRight = width * 0.9
-            const farLeft = width * 0.38
-            const farRight = width * 0.62
-            const horizon = height * 0.38
-            ctx.save()
-            ctx.beginPath()
-            ctx.moveTo(nearLeft, height)
-            ctx.lineTo(farLeft, horizon)
-            ctx.lineTo(farRight, horizon)
-            ctx.lineTo(nearRight, height)
-            ctx.closePath()
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.12)'
-            ctx.fill()
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.55)'
-            ctx.lineWidth = 3
-            ctx.stroke()
-            ctx.restore()
-        }
 
         function drawVideoOverlay() {
             const video = videoRef.value
@@ -289,12 +232,10 @@ const DisplayArea = {
                 link.download = 'detection_result.png'
                 link.href = props.resultImageUrl
                 link.click()
-                return
             }
         }
 
         return {
-            canvasRef,
             videoRef,
             videoOverlayRef,
             drawVideoOverlay,
@@ -314,18 +255,9 @@ const DisplayArea = {
                 <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">下载结果</button>
             </div>
             <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
-                <div v-if="isDetecting" class="placeholder">
-                    <svg class="spin" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                    </svg>
-                    <p>正在分析...</p>
-                </div>
+                <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
-            <div class="panel-body">
-                <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
-                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
-                    <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
                 </template>
                 <div v-else-if="fileType && fileType.startsWith('video/') && (filePreviewUrl || resultVideoUrl)" class="video-result-wrap animate-in">
                     <div class="video-overlay-wrap">
@@ -357,7 +289,6 @@ const DisplayArea = {
     </section>
     `
 }
-
 const StatsGrid = {
     props: {
         confidence: Number,

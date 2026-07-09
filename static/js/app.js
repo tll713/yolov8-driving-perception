@@ -9,11 +9,10 @@ const app = createApp({
         const detections = ref([])
         const detectionTimeline = ref([])
         const resultVideoUrl = ref('')
+        const resultImageUrl = ref('')
         const isDetecting = ref(false)
         const showBadge = ref(false)
         const confidence = ref(null)
-        const resultVideoUrl = ref('')
-        const resultImageUrl = ref('')
         const healthStatus = ref(null)
         const modelInfo = ref(null)
         const safetyAdvice = ref([])
@@ -166,6 +165,7 @@ const app = createApp({
             detections.value = []
             detectionTimeline.value = []
             resultVideoUrl.value = ''
+            resultImageUrl.value = ''
 
             const isImage = fileType.value.startsWith('image/')
             if (!isImage) {
@@ -290,6 +290,7 @@ const app = createApp({
 
         function applyDetectionResult(data, isImage) {
             resultVideoUrl.value = data.result_video || ''
+            resultImageUrl.value = isImage && data.result_filename ? `/results/${data.result_filename}` : ''
             detectionTimeline.value = data.detection_timeline || detectionTimeline.value
             detections.value = data.detections || []
             safetyAdvice.value = data.safety_advice || []
@@ -440,7 +441,7 @@ const app = createApp({
         }
 
         return {
-            currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl,
+            currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl, resultImageUrl,
             isDetecting, showBadge, confidence,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
             sceneSummary, decisionTrace, demoScript, currentUser,
