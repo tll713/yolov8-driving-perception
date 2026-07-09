@@ -35,7 +35,7 @@ const AppHeader = {
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1>自动驾驶感知与仿真系统</h1>
+                    <h1>自动驾驶场景感知系统</h1>
                     <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.inference_mode }} · {{ modelInfo.device }}</span>
                     <span class="logo-sub" v-else>YOLOv8 Detection & Driving Risk Assessment</span>
                 </div>
@@ -134,12 +134,14 @@ const DisplayArea = {
         showBadge: Boolean,
         resultVideoUrl: String,
         resultImageUrl: String,
+        laneAnalysis: Object,
         maxRiskLevel: String
     },
     setup(props) {
         const videoRef = ref(null)
         const videoOverlayRef = ref(null)
         const videoOverlayFrameId = ref(null)
+        const currentLane = ref(null)
 
         const riskBorderClass = Vue.computed(() => {
             const level = props.maxRiskLevel || ''
@@ -171,13 +173,17 @@ const DisplayArea = {
             ctx.clearRect(0, 0, canvas.width, canvas.height)
 
             const timeline = props.detectionTimeline || []
-            if (!timeline.length) return
+            if (!timeline.length) {
+                currentLane.value = props.laneAnalysis || null
+                return
+            }
             const current = video.currentTime || 0
             let frame = timeline[0]
             for (const item of timeline) {
                 if (item.timestamp_sec <= current + 0.35) frame = item
                 else break
             }
+            currentLane.value = frame.lane_analysis || props.laneAnalysis || null
 
             const sourceWidth = frame.image_width || video.videoWidth || canvas.width
             const sourceHeight = frame.image_height || video.videoHeight || canvas.height
@@ -186,6 +192,8 @@ const DisplayArea = {
             const drawHeight = sourceHeight * scale
             const offsetX = (canvas.width - drawWidth) / 2
             const offsetY = (canvas.height - drawHeight) / 2
+
+            drawLaneOverlay(ctx, frame.lane_analysis || props.laneAnalysis, scale, offsetX, offsetY)
 
             ;(frame.detections || []).forEach(d => {
                 const [x1, y1, x2, y2] = d.bbox
@@ -206,6 +214,30 @@ const DisplayArea = {
                 ctx.fillStyle = '#fff'
                 ctx.fillText(label, left + 4, Math.max(13, top - 6))
             })
+        }
+
+        function drawLaneOverlay(ctx, lane, scale, offsetX, offsetY) {
+            if (!lane || lane.status !== 'detected') return
+            ctx.save()
+            ctx.strokeStyle = '#38bdf8'
+            ctx.lineWidth = 4
+            ctx.shadowColor = 'rgba(56, 189, 248, 0.55)'
+            ctx.shadowBlur = 10
+            ;(lane.lines || []).forEach(line => {
+                ctx.beginPath()
+                ctx.moveTo(offsetX + line.x1 * scale, offsetY + line.y1 * scale)
+                ctx.lineTo(offsetX + line.x2 * scale, offsetY + line.y2 * scale)
+                ctx.stroke()
+            })
+            ctx.restore()
+        }
+
+        function hasHighRisk() {
+            return (props.detections || []).some(d => (d.risk?.level || d.risk_level) === 'high')
+        }
+
+        function displayLane() {
+            return currentLane.value || props.laneAnalysis || null
         }
 
         function drawVideoOverlayFrame() {
@@ -252,6 +284,8 @@ const DisplayArea = {
             startVideoOverlayLoop,
             stopVideoOverlayLoop,
             downloadResult,
+            hasHighRisk,
+            displayLane,
             riskBorderClass
         }
     },
@@ -265,7 +299,15 @@ const DisplayArea = {
                 <span v-else-if="showBadge" class="panel-badge">NEW</span>
                 <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">下载结果</button>
             </div>
-            <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
+            <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length, 'risk-alert-body': hasHighRisk() }">
+                <div v-if="hasHighRisk()" class="risk-particle-alert">
+                    <span v-for="i in 28" :key="i"></span>
+                </div>
+                <div v-if="displayLane()" class="lane-floating-banner" :class="'lane-floating-' + (displayLane().direction || 'unknown')">
+                    <span>{{ displayLane().direction_label || '道路方向不明确' }}</span>
+                    <strong>{{ displayLane().confidence || 0 }}%</strong>
+                    <small>{{ displayLane().lane_count || 0 }} 条车道线</small>
+                </div>
                 <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
@@ -300,6 +342,58 @@ const DisplayArea = {
     </section>
     `
 }
+
+const LaneInsightPanel = {
+    props: { laneAnalysis: Object },
+    computed: {
+        lane() {
+            return this.laneAnalysis || {}
+        },
+        directionClass() {
+            const direction = this.lane.direction || 'unknown'
+            if (direction === 'left') return 'lane-left-turn'
+            if (direction === 'right') return 'lane-right-turn'
+            if (direction === 'straight') return 'lane-straight'
+            return 'lane-unknown'
+        },
+        confidenceText() {
+            return this.lane.confidence != null ? `${this.lane.confidence}%` : '-'
+        },
+    },
+    template: `
+    <section class="lane-panel" :class="directionClass">
+        <div class="section-header">
+            <h3>道路与车道感知</h3>
+            <span>lane perception</span>
+        </div>
+        <div v-if="laneAnalysis" class="lane-grid">
+            <div class="lane-primary">
+                <span>行驶趋势</span>
+                <strong>{{ lane.direction_label || '道路方向不明确' }}</strong>
+                <p>{{ lane.message || '等待道路检测结果。' }}</p>
+            </div>
+            <div>
+                <span>检测状态</span>
+                <strong>{{ lane.status_label || '-' }}</strong>
+            </div>
+            <div>
+                <span>车道置信度</span>
+                <strong>{{ confidenceText }}</strong>
+            </div>
+            <div>
+                <span>车道线数量</span>
+                <strong>{{ lane.lane_count || 0 }}</strong>
+            </div>
+            <div>
+                <span>中心偏移</span>
+                <strong>{{ lane.center_offset_ratio != null ? lane.center_offset_ratio : '-' }}</strong>
+            </div>
+        </div>
+        <div v-else class="empty-block">完成图片或视频检测后，将显示直线行驶、左转或右转等道路感知结果。</div>
+    </section>
+    `
+}
+
 const StatsGrid = {
     props: {
         confidence: Number,
@@ -788,6 +882,7 @@ window.AppComponents = {
     AppHeader,
     ControlPanel,
     DisplayArea,
+    LaneInsightPanel,
     StatsGrid,
     RiskAnalysisPanel,
     SafetyAdvicePanel,

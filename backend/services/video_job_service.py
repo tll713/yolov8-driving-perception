@@ -69,6 +69,7 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
             "image_width": payload["image_width"],
             "image_height": payload["image_height"],
             "detections": payload["detections"],
+            "lane_analysis": payload.get("lane_analysis"),
         }
 
         with _LOCK:
@@ -88,7 +89,9 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
                         "image_url": f"/results/{frame_filename}",
                         "result_filename": frame_filename,
                         "detections": payload["detections"],
+                        "lane_analysis": payload.get("lane_analysis"),
                     },
+                    "lane_analysis": payload.get("lane_analysis"),
                     "detections": payload["all_detections"],
                     "count": len(payload["all_detections"]),
                     "max_risk_level": payload.get("max_risk_level", "low"),
@@ -132,5 +135,6 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
                 "decision_trace": result.get("decision_trace", []),
                 "demo_script": result.get("demo_script", []),
                 "safety_advice": result.get("safety_advice", []),
+                "lane_analysis": result.get("lane_analysis"),
             }
         )

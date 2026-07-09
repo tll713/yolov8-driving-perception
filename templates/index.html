@@ -86,8 +86,13 @@
                         :show-badge="showBadge"
                         :result-video-url="resultVideoUrl"
                         :result-image-url="resultImageUrl"
+                        :lane-analysis="laneAnalysis"
                         :max-risk-level="maxRiskLevel"
                     ></display-area>
+
+                    <lane-insight-panel
+                        :lane-analysis="laneAnalysis"
+                    ></lane-insight-panel>
 
                     <stats-grid
                         :confidence="confidence"
