@@ -281,6 +281,11 @@ input[type="file"] { display: none; }
 .risk-high { color: var(--red) !important; text-shadow: 0 0 12px var(--red-glow); }
 .risk-info { color: var(--accent) !important; text-shadow: 0 0 12px var(--accent-glow); }
 
+.risk-border-high { border-color: var(--red) !important; box-shadow: 0 0 20px var(--red-glow), inset 0 0 12px rgba(239,68,68,0.06); }
+.risk-border-medium { border-color: var(--yellow) !important; box-shadow: 0 0 20px var(--yellow-glow), inset 0 0 12px rgba(245,158,11,0.06); }
+.risk-border-info { border-color: var(--accent) !important; box-shadow: 0 0 20px var(--accent-glow), inset 0 0 12px rgba(59,130,246,0.06); }
+.risk-border-low { border-color: var(--green) !important; box-shadow: 0 0 20px var(--green-glow), inset 0 0 12px rgba(16,185,129,0.06); }
+
 .class-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .class-tag {
     display: inline-flex; align-items: center; gap: 5px;
@@ -424,6 +429,31 @@ li::before {
     font-size: 0.78rem; color: var(--accent);
     font-family: 'JetBrains Mono', monospace;
 }
+.ph-thumb-clickable { cursor: pointer; position: relative; }
+.ph-thumb-clickable:hover .ph-thumb-overlay { opacity: 1; }
+.ph-thumb-overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s ease; border-radius: 6px;
+}
+.ph-thumb-overlay svg { color: white; }
+.ph-actions { display: flex; gap: 6px; margin-top: 4px; }
+.ph-modal {
+    position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+}
+.ph-modal-content {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); max-width: 900px; width: 100%; max-height: 85vh; overflow-y: auto;
+}
+.ph-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    font-size: 0.88rem; font-weight: 600; color: var(--text-primary);
+}
+.ph-modal-body { padding: 20px; display: flex; justify-content: center; }
+.ph-modal-media { max-width: 100%; max-height: 70vh; border-radius: 6px; }
 
 .result-canvas { max-width: 100%; max-height: 560px; border-radius: 6px; }
 .video-result-wrap {

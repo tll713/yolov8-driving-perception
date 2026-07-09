@@ -63,7 +63,7 @@
                     </a>
                     <a class="sidebar-item" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        检测历史
+                        历史视频
                     </a>
                 </div>
             </nav>
@@ -86,6 +86,7 @@
                         :show-badge="showBadge"
                         :result-video-url="resultVideoUrl"
                         :result-image-url="resultImageUrl"
+                        :max-risk-level="maxRiskLevel"
                     ></display-area>
 
                     <stats-grid
