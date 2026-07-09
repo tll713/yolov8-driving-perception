@@ -18,6 +18,7 @@ const app = createApp({
         const modelInfo = ref(null)
         const safetyAdvice = ref([])
         const sceneSummary = ref(null)
+        const laneAnalysis = ref(null)
         const decisionTrace = ref([])
         const demoScript = ref([])
         const dashboard = ref({})
@@ -145,6 +146,7 @@ const app = createApp({
             stats.classCounts = {}
             safetyAdvice.value = []
             sceneSummary.value = null
+            laneAnalysis.value = null
             decisionTrace.value = []
             demoScript.value = []
             confidence.value = null
@@ -296,6 +298,7 @@ const app = createApp({
             detections.value = data.detections || []
             safetyAdvice.value = data.safety_advice || []
             sceneSummary.value = data.scene_summary || null
+            laneAnalysis.value = data.lane_analysis || data.latest_frame?.lane_analysis || null
             decisionTrace.value = data.decision_trace || []
             demoScript.value = data.demo_script || []
             updateStats(data, isImage)
@@ -509,7 +512,7 @@ const app = createApp({
             currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl, resultImageUrl,
             isDetecting, showBadge, confidence,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
-            sceneSummary, decisionTrace, demoScript, currentUser,
+            sceneSummary, laneAnalysis, decisionTrace, demoScript, currentUser,
             simulationPresets, simulationScenario, simulationSpeed, simulationDuration,
             simulationResult, isSimulating,
             onFileSelected, onClear, onDetect, onDownloadLog, onClearHistory, onExportReport,
@@ -521,6 +524,7 @@ const app = createApp({
 app.component('app-header', window.AppComponents.AppHeader)
 app.component('control-panel', window.AppComponents.ControlPanel)
 app.component('display-area', window.AppComponents.DisplayArea)
+app.component('lane-insight-panel', window.AppComponents.LaneInsightPanel)
 app.component('stats-grid', window.AppComponents.StatsGrid)
 app.component('risk-analysis-panel', window.AppComponents.RiskAnalysisPanel)
 app.component('safety-advice-panel', window.AppComponents.SafetyAdvicePanel)

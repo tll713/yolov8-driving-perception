@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from backend.config import RESULT_DIR
+from backend.services.lane_service import draw_lane_overlay
 
 
 RISK_COLORS = {
@@ -11,7 +12,7 @@ RISK_COLORS = {
 }
 
 
-def render_detection_image(image_path, detections, result_dir=RESULT_DIR):
+def render_detection_image(image_path, detections, result_dir=RESULT_DIR, lane_analysis=None):
     import cv2
 
     image_path = Path(image_path)
@@ -21,6 +22,8 @@ def render_detection_image(image_path, detections, result_dir=RESULT_DIR):
     image = cv2.imread(str(image_path))
     if image is None:
         raise ValueError("图片读取失败，无法生成检测结果图")
+
+    image = draw_lane_overlay(image, lane_analysis)
 
     for detection in detections:
         x1, y1, x2, y2 = detection["bbox"]

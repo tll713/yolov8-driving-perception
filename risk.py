@@ -15,12 +15,12 @@ TRAFFIC_INFO_CLASSES = {"traffic light", "stop sign"}
 RISK_PRIORITY = {"low": 0, "info": 1, "medium": 2, "high": 3}
 
 CLASS_RISK_SCORE = {
-    "person": 34,
-    "bicycle": 32,
-    "motorcycle": 32,
-    "truck": 27,
-    "bus": 25,
-    "car": 22,
+    "person": 36,
+    "bicycle": 34,
+    "motorcycle": 34,
+    "truck": 23,
+    "bus": 21,
+    "car": 16,
 }
 
 
@@ -106,18 +106,27 @@ def _score_detection(class_name, confidence, features):
 
     if features["lane_overlap"] < 0.35:
         raw_score -= 20
+    if class_name in VEHICLE_CLASSES and features["distance_score"] < 52:
+        raw_score -= 12
+    if class_name in VEHICLE_CLASSES and features["area_ratio"] < 0.045:
+        raw_score -= 8
     if confidence < 0.4:
         raw_score -= 18
 
     return _clamp(round(raw_score))
 
 
-def _level_from_score(class_name, score, lane_overlap, confidence):
+def _level_from_score(class_name, score, lane_overlap, confidence, distance_score, area_ratio):
     if class_name in TRAFFIC_INFO_CLASSES:
         return "info"
-    if score >= 78 and lane_overlap >= 0.35 and confidence >= 0.4:
+
+    is_close = distance_score >= 64 or area_ratio >= 0.12
+    is_in_path = lane_overlap >= 0.48
+    is_reliable = confidence >= 0.48
+
+    if score >= 84 and is_close and is_in_path and is_reliable:
         return "high"
-    if score >= 42:
+    if score >= 50 and (lane_overlap >= 0.25 or distance_score >= 48):
         return "medium"
     return "low"
 
@@ -166,7 +175,14 @@ def assess_detection(detection, image_width, image_height):
         }
 
     score = _score_detection(class_name, confidence, features)
-    level = _level_from_score(class_name, score, features["lane_overlap"], confidence)
+    level = _level_from_score(
+        class_name,
+        score,
+        features["lane_overlap"],
+        confidence,
+        features["distance_score"],
+        features["area_ratio"],
+    )
     reason = "；".join(_reason_parts(class_name, confidence, features))
 
     if level == "high":
