@@ -142,6 +142,7 @@ const DisplayArea = {
         const videoOverlayRef = ref(null)
         const videoOverlayFrameId = ref(null)
         const currentLane = ref(null)
+        const currentFrameDetections = ref([])
 
         const riskBorderClass = Vue.computed(() => {
             const level = props.maxRiskLevel || ''
@@ -175,6 +176,7 @@ const DisplayArea = {
             const timeline = props.detectionTimeline || []
             if (!timeline.length) {
                 currentLane.value = props.laneAnalysis || null
+                currentFrameDetections.value = props.detections || []
                 return
             }
             const current = video.currentTime || 0
@@ -184,6 +186,7 @@ const DisplayArea = {
                 else break
             }
             currentLane.value = frame.lane_analysis || props.laneAnalysis || null
+            currentFrameDetections.value = frame.detections || []
 
             const sourceWidth = frame.image_width || video.videoWidth || canvas.width
             const sourceHeight = frame.image_height || video.videoHeight || canvas.height
@@ -233,7 +236,14 @@ const DisplayArea = {
         }
 
         function hasHighRisk() {
-            return (props.detections || []).some(d => (d.risk?.level || d.risk_level) === 'high')
+            const activeDetections = props.fileType && props.fileType.startsWith('video/')
+                ? currentFrameDetections.value
+                : props.detections
+            return (activeDetections || []).some(d => {
+                const level = d.risk?.level || d.risk_level
+                const score = d.risk?.score || d.risk_score || 0
+                return level === 'high' && score >= 88
+            })
         }
 
         function displayLane() {
@@ -303,8 +313,8 @@ const DisplayArea = {
                 <div v-if="hasHighRisk()" class="risk-particle-alert">
                     <span v-for="i in 28" :key="i"></span>
                 </div>
-                <div v-if="displayLane()" class="lane-floating-banner" :class="'lane-floating-' + (displayLane().direction || 'unknown')">
-                    <span>{{ displayLane().direction_label || '道路方向不明确' }}</span>
+                <div v-if="displayLane()" class="lane-floating-banner" :class="'lane-floating-' + (displayLane().advice_direction || displayLane().direction || 'unknown')">
+                    <span>{{ displayLane().advice_label || displayLane().direction_label || '保持车道观察' }}</span>
                     <strong>{{ displayLane().confidence || 0 }}%</strong>
                     <small>{{ displayLane().lane_count || 0 }} 条车道线</small>
                 </div>
@@ -369,8 +379,8 @@ const LaneInsightPanel = {
         <div v-if="laneAnalysis" class="lane-grid">
             <div class="lane-primary">
                 <span>行驶趋势</span>
-                <strong>{{ lane.direction_label || '道路方向不明确' }}</strong>
-                <p>{{ lane.message || '等待道路检测结果。' }}</p>
+                <strong>{{ lane.advice_label || lane.direction_label || '保持车道观察' }}</strong>
+                <p>{{ lane.advice_message || lane.message || '等待道路检测结果。' }}</p>
             </div>
             <div>
                 <span>检测状态</span>

@@ -116,17 +116,33 @@ def _score_detection(class_name, confidence, features):
     return _clamp(round(raw_score))
 
 
-def _level_from_score(class_name, score, lane_overlap, confidence, distance_score, area_ratio):
+def _level_from_score(class_name, score, lane_overlap, confidence, distance_score, area_ratio, zone):
     if class_name in TRAFFIC_INFO_CLASSES:
         return "info"
 
-    is_close = distance_score >= 64 or area_ratio >= 0.12
-    is_in_path = lane_overlap >= 0.48
-    is_reliable = confidence >= 0.48
+    if class_name in VEHICLE_CLASSES:
+        is_center_path = zone.endswith("center")
+        is_critical_vehicle = (
+            score >= 92
+            and distance_score >= 78
+            and area_ratio >= 0.09
+            and lane_overlap >= 0.68
+            and confidence >= 0.58
+            and is_center_path
+        )
+        if is_critical_vehicle:
+            return "high"
+        if score >= 56 and (distance_score >= 54 or lane_overlap >= 0.32):
+            return "medium"
+        return "low"
 
-    if score >= 84 and is_close and is_in_path and is_reliable:
+    is_close = distance_score >= 68 or area_ratio >= 0.13
+    is_in_path = lane_overlap >= 0.52
+    is_reliable = confidence >= 0.5
+
+    if score >= 86 and is_close and is_in_path and is_reliable:
         return "high"
-    if score >= 50 and (lane_overlap >= 0.25 or distance_score >= 48):
+    if score >= 52 and (lane_overlap >= 0.28 or distance_score >= 52):
         return "medium"
     return "low"
 
@@ -182,6 +198,7 @@ def assess_detection(detection, image_width, image_height):
         confidence,
         features["distance_score"],
         features["area_ratio"],
+        features["zone"],
     )
     reason = "；".join(_reason_parts(class_name, confidence, features))
 

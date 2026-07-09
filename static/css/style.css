@@ -602,6 +602,15 @@ li::before {
     border-color: rgba(245,158,11,0.64);
 }
 .lane-floating-unknown strong { color: var(--yellow); }
+.lane-floating-slow {
+    border-color: rgba(245,158,11,0.72);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35), 0 0 24px rgba(245,158,11,0.22);
+}
+.lane-floating-slow strong { color: var(--yellow); }
+.lane-floating-keep {
+    border-color: rgba(148,163,184,0.55);
+}
+.lane-floating-keep strong { color: var(--text-secondary); }
 
 @keyframes lane-banner-pulse {
     0%, 100% { transform: translateX(-50%) scale(1); }
