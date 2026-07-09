@@ -4,6 +4,9 @@ def _empty_lane_analysis(width=0, height=0):
         "status_label": "车道线不足",
         "direction": "unknown",
         "direction_label": "道路方向不明确",
+        "advice_direction": "keep",
+        "advice_label": "保持车道观察",
+        "advice_message": "车道线不足，暂不建议变道，保持车速并继续观察。",
         "confidence": 0,
         "lane_count": 0,
         "center_offset_ratio": 0,
@@ -86,6 +89,78 @@ def _message(direction_label, confidence, lane_count):
     if confidence >= 70:
         return f"车道线稳定，系统判断当前道路趋势为：{direction_label}。"
     return f"车道线置信度中等，系统初步判断为：{direction_label}。"
+
+
+def apply_driving_advice(lane_analysis, detections, image_width):
+    lane = dict(lane_analysis or _empty_lane_analysis(image_width, 0))
+    detections = detections or []
+    close_targets = []
+
+    for item in detections:
+        risk = item.get("risk", {})
+        distance_score = item.get("distance_score") or risk.get("distance_score") or 0
+        lane_overlap = item.get("lane_overlap") or risk.get("lane_overlap") or 0
+        bbox = item.get("bbox") or [0, 0, 0, 0]
+        center_x = item.get("center_x")
+        if center_x is None:
+            center_x = (bbox[0] + bbox[2]) / 2
+
+        if distance_score >= 58 and lane_overlap >= 0.18:
+            close_targets.append({**item, "center_x": center_x, "distance_score": distance_score})
+
+    if not close_targets:
+        label = lane.get("direction_label") if lane.get("direction") != "unknown" else "保持车道观察"
+        lane.update(
+            {
+                "advice_direction": lane.get("direction", "keep"),
+                "advice_label": label,
+                "advice_message": lane.get("message") or "当前未发现近距离阻挡目标，建议保持车道并继续观察。",
+            }
+        )
+        return lane
+
+    left_targets = [item for item in close_targets if item["center_x"] < image_width * 0.45]
+    right_targets = [item for item in close_targets if item["center_x"] > image_width * 0.55]
+    center_targets = [
+        item
+        for item in close_targets
+        if image_width * 0.45 <= item["center_x"] <= image_width * 0.55
+    ]
+
+    if left_targets and not right_targets:
+        lane.update(
+            {
+                "advice_direction": "right",
+                "advice_label": "左前方近距目标，建议向右避让",
+                "advice_message": "左前方检测到近距离目标，右侧空间相对更安全，建议减速并向右侧保持安全距离。",
+            }
+        )
+    elif right_targets and not left_targets:
+        lane.update(
+            {
+                "advice_direction": "left",
+                "advice_label": "右前方近距目标，建议向左避让",
+                "advice_message": "右前方检测到近距离目标，左侧空间相对更安全，建议减速并向左侧保持安全距离。",
+            }
+        )
+    elif center_targets:
+        lane.update(
+            {
+                "advice_direction": "slow",
+                "advice_label": "正前方近距目标，建议减速",
+                "advice_message": "正前方自车路径内存在近距离目标，不建议贸然变道，优先减速并保持车距。",
+            }
+        )
+    else:
+        lane.update(
+            {
+                "advice_direction": "slow",
+                "advice_label": "前方两侧均有目标，建议减速观察",
+                "advice_message": "左右前方均存在近距离目标，建议降低车速，等待更安全的通行空间。",
+            }
+        )
+
+    return lane
 
 
 def analyze_lane_image(image_or_path):
@@ -228,11 +303,14 @@ def draw_lane_overlay(frame, lane_analysis):
         )
 
     height, width = frame.shape[:2]
+    hud_direction = lane_analysis.get("advice_direction") or lane_analysis.get("direction")
     direction_text = {
         "straight": "LANE: STRAIGHT",
         "left": "LANE: TURN LEFT",
         "right": "LANE: TURN RIGHT",
-    }.get(lane_analysis.get("direction"), "LANE: UNKNOWN")
+        "keep": "ADVICE: KEEP LANE",
+        "slow": "ADVICE: SLOW DOWN",
+    }.get(hud_direction, "ADVICE: OBSERVE")
     label = f"{direction_text}  CONF {lane_analysis.get('confidence', 0)}%"
     banner_left = 18
     banner_top = max(18, height - 88)

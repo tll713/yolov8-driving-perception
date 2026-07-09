@@ -16,7 +16,7 @@ from backend.services.demo_analysis_service import (
     build_scene_summary,
 )
 from backend.services.history_service import append_history
-from backend.services.lane_service import analyze_lane_image, draw_lane_overlay
+from backend.services.lane_service import analyze_lane_image, apply_driving_advice, draw_lane_overlay
 from backend.services.model_service import get_model
 from backend.services.result_renderer import render_detection_image
 from backend.services.model_service import get_model
@@ -71,7 +71,11 @@ def detect_uploaded_image(upload, confidence=0.5):
         confidence=confidence,
     )
     detections = detection_result["detections"]
-    lane_analysis = analyze_lane_image(str(upload_path))
+    lane_analysis = apply_driving_advice(
+        analyze_lane_image(str(upload_path)),
+        detections,
+        detection_result["image_width"],
+    )
     result_path = render_detection_image(upload_path, detections, lane_analysis=lane_analysis)
     risk_summary = summarize_risk(detections)
 
@@ -144,7 +148,6 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
             is_sample_frame = frame_idx % sample_interval == 0
             if is_sample_frame:
                 frame_lane_analysis = analyze_lane_image(frame)
-                last_lane_analysis = frame_lane_analysis
                 results = model.predict(frame, conf=confidence, verbose=False)
                 for result in results:
                     names = result.names
@@ -161,6 +164,8 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                         detection["risk"] = assess_detection(detection, width, height)
                         frame_detections.append(detection)
 
+                frame_lane_analysis = apply_driving_advice(frame_lane_analysis, frame_detections, width)
+                last_lane_analysis = frame_lane_analysis
                 last_frame_detections = frame_detections
                 for detection in frame_detections:
                     if not any(
