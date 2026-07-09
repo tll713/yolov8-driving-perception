@@ -339,27 +339,132 @@ const StatsGrid = {
 
 const RiskAnalysisPanel = {
     props: { detections: Array },
+    data() {
+        return { historyItems: [], expandedGroups: {}, expandedSeconds: {} }
+    },
+    async mounted() {
+        await this.loadHistory()
+    },
+    watch: {
+        detections: {
+            handler() { this.loadHistory() },
+            deep: true,
+        },
+    },
     methods: {
         riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
+        async loadHistory() {
+            try {
+                const res = await fetch('/api/detections/history')
+                const json = await res.json()
+                if (json.code === 0 && json.data.items?.length) {
+                    this.historyItems = json.data.items
+                }
+            } catch { this.historyItems = [] }
+        },
+        groupedBy10s() {
+            const groups = {}
+            this.historyItems.forEach(item => {
+                const ts = item.created_at || ''
+                const d = new Date(ts)
+                if (isNaN(d.getTime())) return
+                const sec = d.getSeconds()
+                const bucket = Math.floor(sec / 10) * 10
+                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(bucket).padStart(2,'0')}`
+                if (!groups[key]) groups[key] = { time: ts, label: key, items: [], totalTargets: 0, riskCounts: { high: 0, medium: 0, info: 0, low: 0 } }
+                groups[key].items.push(item)
+                groups[key].totalTargets += item.count || item.total_objects || 0
+                const rl = item.max_risk_level || 'low'
+                if (groups[key].riskCounts[rl] !== undefined) groups[key].riskCounts[rl]++
+            })
+            return Object.values(groups).sort((a, b) => b.time.localeCompare(a.time))
+        },
+        groupedBySecond(items) {
+            const groups = {}
+            items.forEach(item => {
+                const ts = item.created_at || ''
+                const d = new Date(ts)
+                if (isNaN(d.getTime())) return
+                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
+                if (!groups[key]) groups[key] = { time: ts, label: key, items: [], totalTargets: 0, riskCounts: { high: 0, medium: 0, info: 0, low: 0 } }
+                groups[key].items.push(item)
+                groups[key].totalTargets += item.count || item.total_objects || 0
+                const rl = item.max_risk_level || 'low'
+                if (groups[key].riskCounts[rl] !== undefined) groups[key].riskCounts[rl]++
+            })
+            return Object.values(groups).sort((a, b) => b.time.localeCompare(a.time))
+        },
+        toggleGroup(key) {
+            this.expandedGroups[key] = !this.expandedGroups[key]
+        },
+        isExpanded(key) {
+            return !!this.expandedGroups[key]
+        },
+        toggleSecond(key) {
+            this.expandedSeconds[key] = !this.expandedSeconds[key]
+        },
+        isSecondExpanded(key) {
+            return !!this.expandedSeconds[key]
+        },
     },
     template: `
     <section class="analysis-panel">
-        <div class="section-header"><h3>目标风险明细</h3><span>{{ detections.length }} items</span></div>
-        <div v-if="detections.length" class="analysis-list">
-            <article class="analysis-item" v-for="(d, i) in detections" :key="i">
-                <div class="analysis-main">
-                    <strong>{{ d.class_name_cn || d.class_name }}</strong>
-                    <span>{{ (d.confidence * 100).toFixed(1) }}%</span>
-                    <span :class="riskClass(d.risk?.level)">{{ riskLabel(d.risk?.level) }}</span>
+        <div class="section-header"><h3>目标风险明细</h3><span>{{ historyItems.length }} 条记录</span></div>
+        <div v-if="groupedBy10s().length">
+            <div v-for="group in groupedBy10s()" :key="group.label" class="risk-time-group">
+                <div class="risk-time-header" @click="toggleGroup(group.label)" style="cursor:pointer;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    {{ group.label }}
+                    <span class="risk-time-count">{{ group.items.length }} 条检测 · {{ group.totalTargets }} 个目标</span>
+                    <span class="risk-time-badges">
+                        <span v-if="group.riskCounts.high" class="risk-badge risk-high">高{{ group.riskCounts.high }}</span>
+                        <span v-if="group.riskCounts.medium" class="risk-badge risk-medium">中{{ group.riskCounts.medium }}</span>
+                        <span v-if="group.riskCounts.info" class="risk-badge risk-info">提示{{ group.riskCounts.info }}</span>
+                        <span v-if="group.riskCounts.low" class="risk-badge risk-low">低{{ group.riskCounts.low }}</span>
+                    </span>
+                    <span class="risk-toggle-icon">{{ isExpanded(group.label) ? '▾' : '▸' }}</span>
                 </div>
-                <p>{{ d.risk?.reason || d.risk_reason || '暂无风险原因' }}</p>
-                <div class="metric-row">
-                    <span>风险分 {{ d.risk?.score || d.risk_score || 0 }}</span>
-                    <span>路径重叠 {{ Math.round((d.lane_overlap || 0) * 100) }}%</span>
-                    <span>距离分 {{ d.distance_score || 0 }}</span>
+                <div v-show="isExpanded(group.label)" class="risk-time-body">
+                    <div v-for="secGroup in groupedBySecond(group.items)" :key="secGroup.label" class="risk-sec-group">
+                        <div class="risk-sec-header" @click="toggleSecond(secGroup.label)" style="cursor:pointer;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 6 12 12 16 14"/></svg>
+                            {{ secGroup.label }}
+                            <span class="risk-time-count">{{ secGroup.items.length }} 条 · {{ secGroup.totalTargets }} 个目标</span>
+                            <span class="risk-time-badges">
+                                <span v-if="secGroup.riskCounts.high" class="risk-badge risk-high">高{{ secGroup.riskCounts.high }}</span>
+                                <span v-if="secGroup.riskCounts.medium" class="risk-badge risk-medium">中{{ secGroup.riskCounts.medium }}</span>
+                                <span v-if="secGroup.riskCounts.info" class="risk-badge risk-info">提示{{ secGroup.riskCounts.info }}</span>
+                                <span v-if="secGroup.riskCounts.low" class="risk-badge risk-low">低{{ secGroup.riskCounts.low }}</span>
+                            </span>
+                            <span class="risk-toggle-icon">{{ isSecondExpanded(secGroup.label) ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-show="isSecondExpanded(secGroup.label)" class="risk-sec-body">
+                            <div class="analysis-list">
+                                <article class="analysis-item" v-for="(item, idx) in secGroup.items" :key="idx">
+                                    <div class="analysis-main">
+                                        <strong>{{ item.original_filename || item.filename || '-' }}</strong>
+                                        <span>{{ item.count || item.total_objects || 0 }} 个目标</span>
+                                        <span :class="riskClass(item.max_risk_level || 'low')">{{ riskLabel(item.max_risk_level || 'low') }}</span>
+                                    </div>
+                                    <div class="metric-row">
+                                        <span>置信度 {{ item.confidence != null ? item.confidence.toFixed(2) : '-' }}</span>
+                                        <span>耗时 {{ item.inference_time_ms || '-' }} ms</span>
+                                    </div>
+                                    <div v-if="item.detections?.length" class="risk-det-sub">
+                                        <div class="risk-det-item" v-for="(d, di) in item.detections" :key="di">
+                                            <strong>{{ d.class_name_cn || d.class_name }}</strong>
+                                            <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
+                                            <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
+                                            <span class="risk-det-reason">{{ d.risk?.reason || d.risk_reason || '' }}</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </article>
+            </div>
         </div>
         <div v-else class="empty-block">完成检测后显示每个目标的风险依据。</div>
     </section>
@@ -440,22 +545,6 @@ const SceneInsightPanel = {
     `
 }
 
-const DemoScriptPanel = {
-    props: {
-        script: Array,
-    },
-    template: `
-    <section class="flow-panel">
-        <div class="section-header"><h3>演示讲解脚本</h3><span>presentation helper</span></div>
-        <div v-if="script && script.length" class="demo-script">
-            <ol>
-                <li v-for="(line, i) in script" :key="i">{{ line }}</li>
-            </ol>
-        </div>
-        <div v-else class="empty-block">检测完成后自动生成答辩讲解要点。</div>
-    </section>
-    `
-}
 
 const SimulationPanel = {
     props: {
@@ -606,44 +695,87 @@ const SystemInfoPanel = {
     `
 }
 
-const AlgorithmFlowPanel = {
-    template: `
-    <section class="flow-panel">
-        <div class="section-header"><h3>算法流程</h3><span>demo pipeline</span></div>
-        <div class="flow-steps">
-            <div>文件上传</div><div>YOLOv8 检测</div><div>自车行驶路径分析</div><div>风险评分</div><div>结果保存</div>
-        </div>
-    </section>
-    `
-}
 
 const HistoryPanel = {
     props: { history: Array },
     emits: ['downloadLog', 'clearHistory'],
+    data() {
+        return { allItems: [] }
+    },
+    async mounted() {
+        await this.loadFullHistory()
+    },
     methods: {
         riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
-        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' }
+        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
+        async loadFullHistory() {
+            try {
+                const res = await fetch('/api/detections/history')
+                const json = await res.json()
+                if (json.code === 0 && json.data.items?.length) {
+                    this.allItems = json.data.items
+                }
+            } catch { this.allItems = [] }
+        },
+        formatTime(iso) {
+            if (!iso) return ''
+            const d = new Date(iso)
+            const pad = n => String(n).padStart(2, '0')
+            return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+        },
+        overallRisk(item) {
+            return item.max_risk_level || 'low'
+        },
+        isImage(item) {
+            return item.type === 'image' || (item.filename || '').match(/\.(jpg|jpeg|png|bmp|webp)$/i)
+        },
+        isVideo(item) {
+            return item.type === 'video' || (item.filename || '').match(/\.(mp4|avi|mov|mkv)$/i)
+        },
+        mediaUrl(item) {
+            if (this.isImage(item) && item.result_filename) return '/results/' + item.result_filename
+            if (this.isVideo(item) && item.result_video) return item.result_video
+            return ''
+        },
     },
     template: `
-    <section class="history-panel">
-        <div class="history-header">
-            <h3>检测历史</h3>
-            <div class="action-group">
-                <button class="btn btn-ghost btn-sm" @click="$emit('clearHistory')">清空</button>
-                <button class="btn btn-ghost btn-sm" @click="$emit('downloadLog')">导出</button>
+    <section class="ph-wrap">
+        <div class="ph-header">
+            <h3>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                检测记录
+                <span v-if="allItems.length" class="history-badge">{{ allItems.length }}</span>
+            </h3>
+            <button class="btn btn-ghost btn-sm" @click="$emit('downloadLog')">导出</button>
+        </div>
+        <div v-if="allItems.length" class="ph-timeline">
+            <div v-for="(item, i) in allItems" :key="i" class="ph-row">
+                <div class="ph-left">
+                    <div class="ph-dot" :class="riskClass(overallRisk(item))"></div>
+                    <div v-if="i < allItems.length - 1" class="ph-line"></div>
+                </div>
+                <div class="ph-right">
+                    <div class="ph-time">{{ formatTime(item.created_at) }}</div>
+                    <div class="ph-card">
+                        <div class="ph-thumb" v-if="isImage(item) && item.result_filename">
+                            <img :src="'/results/' + item.result_filename" alt="">
+                        </div>
+                        <div class="ph-thumb ph-thumb-video" v-else-if="isVideo(item) && item.result_video">
+                            <video :src="item.result_video" muted preload="metadata"></video>
+                            <div class="ph-play-icon">▶</div>
+                        </div>
+                        <div class="ph-thumb ph-thumb-empty" v-else>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </div>
+                        <div class="ph-meta">
+                            <span class="ph-filename">{{ item.original_filename || item.filename || '-' }}</span>
+                            <span class="ph-counts">{{ item.count || item.total_objects || 0 }} 个目标</span>
+                            <span :class="riskClass(overallRisk(item))">{{ riskLabel(overallRisk(item)) }}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-        <ul v-if="history.length" class="history-list">
-            <li v-for="(item, i) in history" :key="i" class="history-item animate-in">
-                <div>
-                    <span class="history-file">{{ item.filename }}</span>
-                    <span class="history-time">{{ item.created_at }}</span>
-                </div>
-                <span class="history-count">{{ item.count }} 个目标</span>
-                <span :class="riskClass(item.overall_risk)">{{ riskLabel(item.overall_risk) }}</span>
-                <span>{{ item.inference_time_ms || '-' }} ms</span>
-            </li>
-        </ul>
         <div v-else class="empty-block">暂无记录</div>
     </section>
     `
@@ -657,12 +789,12 @@ window.AppComponents = {
     RiskAnalysisPanel,
     SafetyAdvicePanel,
     SceneInsightPanel,
-    DemoScriptPanel,
+
     SimulationPanel,
     DashboardPanel,
     ReportPanel,
     SystemInfoPanel,
-    AlgorithmFlowPanel,
+
     HistoryPanel,
 }
 window.RISK_STYLE_MAP = RISK_STYLE_MAP

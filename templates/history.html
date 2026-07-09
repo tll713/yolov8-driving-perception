@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检测历史 - 自动驾驶目标检测与风险提示系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:14px;">
+                    <div class="logo-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>检测历史</h1>
+                        <span class="logo-sub">Detection History</span>
+                    </div>
+                </a>
+            </div>
+            <div class="header-right">
+                <a href="/" class="btn btn-ghost btn-sm">返回首页</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="main" style="padding-top:20px;">
+        <div class="history-page-card">
+            <div class="history-page-header">
+                <h3>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    检测历史记录
+                </h3>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-ghost btn-sm" onclick="clearHistory()">清空历史</button>
+                    <button class="btn btn-ghost btn-sm" onclick="downloadHistory()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        下载历史记录
+                    </button>
+                </div>
+            </div>
+            <div id="history-list" class="history-page-list">
+                <div class="history-loading">加载中...</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const RISK_MAP = {
+            high: { label: '高风险', cls: 'risk-high' },
+            medium: { label: '中风险', cls: 'risk-medium' },
+            info: { label: '交通提示', cls: 'risk-info' },
+            low: { label: '低风险', cls: 'risk-low' },
+        };
+
+        function computeOverallRisk(detections) {
+            const levels = (detections || []).map(d => d.risk?.level || d.risk_level || 'low');
+            if (levels.includes('high')) return 'high';
+            if (levels.includes('medium')) return 'medium';
+            if (levels.includes('info')) return 'info';
+            return 'low';
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        async function loadHistory() {
+            const container = document.getElementById('history-list');
+            try {
+                const res = await fetch('/api/detections/history');
+                const json = await res.json();
+                if (json.code !== 0 || !json.data.items?.length) {
+                    container.innerHTML = '<div class="history-empty-page">暂无检测记录</div>';
+                    return;
+                }
+                container.innerHTML = json.data.items.map(item => {
+                    const risk = item.max_risk_level || computeOverallRisk(item.detections);
+                    const info = RISK_MAP[risk] || RISK_MAP.low;
+                    const isImage = item.type === 'image' || (item.filename || '').match(/\.(jpg|jpeg|png|bmp|webp)$/i);
+                    const isVideo = item.type === 'video' || (item.filename || '').match(/\.(mp4|avi|mov|mkv)$/i);
+                    const thumbSrc = isImage && item.result_filename ? `/results/${item.result_filename}` : '';
+                    const videoSrc = isVideo && item.result_video ? item.result_video : '';
+                    return `<div class="history-page-item">
+                        <span class="history-time">${formatDate(item.created_at)}</span>
+                        <span class="history-file">${item.original_filename || item.filename || ''}</span>
+                        ${thumbSrc ? `<img src="${thumbSrc}" class="history-thumb-img" alt="结果">` : ''}
+                        ${videoSrc ? `<span class="history-video-badge">VIDEO</span>` : ''}
+                        <span class="history-arrow">→</span>
+                        <span class="history-count">${item.count || item.total_objects || 0}个目标</span>
+                        <span class="${info.cls}">${info.label}</span>
+                        ${item.inference_time_ms ? `<span class="history-ms">${item.inference_time_ms} ms</span>` : ''}
+                    </div>`;
+                }).join('');
+            } catch {
+                container.innerHTML = '<div class="history-empty-page">加载失败，请检查后端服务</div>';
+            }
+        }
+
+        async function downloadHistory() {
+            try {
+                const res = await fetch('/api/detections/history');
+                const json = await res.json();
+                if (json.code !== 0 || !json.data.items?.length) {
+                    alert('暂无历史记录可导出');
+                    return;
+                }
+                const items = json.data.items;
+                const dashboard = json.data.dashboard || {};
+                const riskMap = { high: '高风险', medium: '中风险', info: '交通提示', low: '低风险' };
+                function overallRisk(dets) {
+                    const levels = (dets || []).map(d => d.risk?.level || d.risk_level || 'low');
+                    if (levels.includes('high')) return 'high';
+                    if (levels.includes('medium')) return 'medium';
+                    if (levels.includes('info')) return 'info';
+                    return 'low';
+                }
+                const rows = items.map((item, i) => {
+                    const risk = item.max_risk_level || overallRisk(item.detections);
+                    return `<tr>
+                        <td>${i + 1}</td>
+                        <td>${formatDate(item.created_at)}</td>
+                        <td>${item.original_filename || item.filename || '-'}</td>
+                        <td>${item.count || item.total_objects || 0}</td>
+                        <td>${riskMap[risk] || '-'}</td>
+                        <td>${item.inference_time_ms || '-'} ms</td>
+                    </tr>`;
+                }).join('');
+                const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>检测历史记录</title>
+                <style>body{font-family:Arial,"Microsoft YaHei",sans-serif;padding:32px;color:#111827;}
+                h1{margin-bottom:4px;} .meta{color:#6b7280;font-size:14px;margin-bottom:20px;}
+                .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0;}
+                .card{border:1px solid #d1d5db;padding:14px;border-radius:8px;}
+                .card span{display:block;color:#6b7280;font-size:12px;} .card strong{font-size:20px;}
+                table{width:100%;border-collapse:collapse;margin-top:16px;}
+                th,td{border:1px solid #d1d5db;padding:8px;text-align:left;font-size:13px;}
+                th{background:#f3f4f6;}</style></head>
+                <body><h1>自动驾驶场景风险感知 - 检测历史记录</h1>
+                <div class="meta">导出时间：${new Date().toLocaleString('zh-CN')}</div>
+                <div class="cards">
+                    <div class="card"><span>检测次数</span><strong>${dashboard.total_records || items.length}</strong></div>
+                    <div class="card"><span>累计目标</span><strong>${dashboard.total_objects || 0}</strong></div>
+                    <div class="card"><span>高风险占比</span><strong>${Math.round((dashboard.high_risk_ratio || 0) * 100)}%</strong></div>
+                </div>
+                <table><thead><tr><th>#</th><th>时间</th><th>文件</th><th>目标数</th><th>风险</th><th>耗时</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="6">暂无记录</td></tr>'}</tbody></table>
+                </body></html>`;
+                const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                const link = document.createElement('a');
+                link.download = '检测历史记录.html';
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                URL.revokeObjectURL(link.href);
+            } catch {
+                alert('导出失败，请检查后端服务');
+            }
+        }
+
+        async function clearHistory() {
+            if (!confirm('确定清空所有检测历史记录？')) return;
+            await fetch('/api/detections/history/clear', { method: 'POST' });
+            await loadHistory();
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>

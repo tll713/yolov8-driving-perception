@@ -3,6 +3,7 @@ const { createApp, reactive, onMounted, ref } = Vue
 
 const app = createApp({
     setup() {
+        const activeTab = ref('detect')
         const currentFile = ref(null)
         const filePreviewUrl = ref('')
         const fileType = ref('')
@@ -339,8 +340,71 @@ const app = createApp({
             return detList.reduce((max, item) => Math.max(max, item.risk?.score || item.risk_score || 0), 0)
         }
 
-        function onDownloadLog() {
-            window.open('/api/detections/history', '_blank')
+        async function onDownloadLog() {
+            try {
+                const res = await fetch('/api/detections/history')
+                const json = await res.json()
+                if (json.code !== 0 || !json.data.items?.length) {
+                    alert('暂无历史记录可导出')
+                    return
+                }
+                const items = json.data.items
+                const dashboard = json.data.dashboard || {}
+                const riskMap = { high: '高风险', medium: '中风险', info: '交通提示', low: '低风险' }
+                function overallRisk(dets) {
+                    const levels = (dets || []).map(d => d.risk?.level || d.risk_level || 'low')
+                    if (levels.includes('high')) return 'high'
+                    if (levels.includes('medium')) return 'medium'
+                    if (levels.includes('info')) return 'info'
+                    return 'low'
+                }
+                const rows = items.map((item, i) => {
+                    const risk = item.max_risk_level || overallRisk(item.detections)
+                    const detRows = (item.detections || []).map(d => `<tr>
+                        <td>${d.class_name_cn || d.class_name || '-'}</td>
+                        <td>${((d.confidence || 0) * 100).toFixed(1)}%</td>
+                        <td>${riskMap[d.risk?.level || d.risk_level || 'low'] || '-'}</td>
+                        <td>${d.risk?.message || d.risk_message || '-'}</td>
+                    </tr>`).join('')
+                    return `<tr>
+                        <td>${i + 1}</td>
+                        <td>${item.created_at || '-'}</td>
+                        <td>${item.original_filename || item.filename || '-'}</td>
+                        <td>${item.count || item.total_objects || 0}</td>
+                        <td>${riskMap[risk] || '-'}</td>
+                        <td>${item.inference_time_ms || '-'} ms</td>
+                        <td>${item.confidence != null ? item.confidence.toFixed(2) : '-'}</td>
+                    </tr>
+                    ${detRows ? `<tr><td colspan="7" style="padding:0;"><table style="width:100%;border:1px solid #e5e7eb;margin:4px 0;"><thead><tr><th>类别</th><th>置信度</th><th>风险</th><th>说明</th></tr></thead><tbody>${detRows}</tbody></table></td></tr>` : ''}`
+                }).join('')
+                const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>检测历史记录</title>
+                <style>body{font-family:Arial,"Microsoft YaHei",sans-serif;padding:32px;color:#111827;}
+                h1{margin-bottom:4px;} .meta{color:#6b7280;font-size:14px;margin-bottom:20px;}
+                .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0;}
+                .card{border:1px solid #d1d5db;padding:14px;border-radius:8px;}
+                .card span{display:block;color:#6b7280;font-size:12px;} .card strong{font-size:20px;}
+                table{width:100%;border-collapse:collapse;margin-top:16px;}
+                th,td{border:1px solid #d1d5db;padding:8px;text-align:left;font-size:13px;}
+                th{background:#f3f4f6;}</style></head>
+                <body><h1>自动驾驶场景风险感知 - 检测历史记录</h1>
+                <div class="meta">导出时间：${new Date().toLocaleString('zh-CN')}</div>
+                <div class="cards">
+                    <div class="card"><span>检测次数</span><strong>${dashboard.total_records || items.length}</strong></div>
+                    <div class="card"><span>累计目标</span><strong>${dashboard.total_objects || 0}</strong></div>
+                    <div class="card"><span>高风险占比</span><strong>${Math.round((dashboard.high_risk_ratio || 0) * 100)}%</strong></div>
+                </div>
+                <table><thead><tr><th>#</th><th>时间</th><th>文件</th><th>目标数</th><th>风险</th><th>耗时</th><th>置信度</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7">暂无记录</td></tr>'}</tbody></table>
+                </body></html>`
+                const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+                const link = document.createElement('a')
+                link.download = '检测历史记录.html'
+                link.href = URL.createObjectURL(blob)
+                link.click()
+                URL.revokeObjectURL(link.href)
+            } catch {
+                alert('导出失败，请检查后端服务')
+            }
         }
 
         async function onClearHistory() {
@@ -441,6 +505,7 @@ const app = createApp({
         }
 
         return {
+            activeTab,
             currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl, resultImageUrl,
             isDetecting, showBadge, confidence,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
@@ -460,12 +525,12 @@ app.component('stats-grid', window.AppComponents.StatsGrid)
 app.component('risk-analysis-panel', window.AppComponents.RiskAnalysisPanel)
 app.component('safety-advice-panel', window.AppComponents.SafetyAdvicePanel)
 app.component('scene-insight-panel', window.AppComponents.SceneInsightPanel)
-app.component('demo-script-panel', window.AppComponents.DemoScriptPanel)
+
 app.component('simulation-panel', window.AppComponents.SimulationPanel)
 app.component('dashboard-panel', window.AppComponents.DashboardPanel)
 app.component('report-panel', window.AppComponents.ReportPanel)
 app.component('system-info-panel', window.AppComponents.SystemInfoPanel)
-app.component('algorithm-flow-panel', window.AppComponents.AlgorithmFlowPanel)
+
 app.component('history-panel', window.AppComponents.HistoryPanel)
 
 app.mount('#app')

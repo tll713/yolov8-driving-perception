@@ -18,96 +18,158 @@
             :current-user="currentUser"
         ></app-header>
 
-        <main class="main">
-            <control-panel
-                :has-file="!!currentFile"
-                :is-detecting="isDetecting"
-                @file-selected="onFileSelected"
-                @detect="onDetect"
-                @clear="onClear"
-            ></control-panel>
+        <div class="app-layout">
+            <nav class="app-sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">检测</div>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'detect' }" @click="activeTab = 'detect'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        检测与结果
+                    </a>
 
-            <display-area
-                :file-preview-url="filePreviewUrl"
-                :file-type="fileType"
-                :detections="detections"
-                :detection-timeline="detectionTimeline"
-                :is-detecting="isDetecting"
-                :show-badge="showBadge"
-                :result-video-url="resultVideoUrl"
-                :result-image-url="resultImageUrl"
-            ></display-area>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">分析</div>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'risk' }" @click="activeTab = 'risk'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        目标风险明细
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'advice' }" @click="activeTab = 'advice'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                        驾驶安全建议
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'scene' }" @click="activeTab = 'scene'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        场景理解
+                    </a>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">工具</div>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'simulation' }" @click="activeTab = 'simulation'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        风险仿真
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'report' }" @click="activeTab = 'report'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        检测报告
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        系统状态
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        数据看板
+                    </a>
+                    <a class="sidebar-item" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        检测历史
+                    </a>
+                </div>
+            </nav>
 
-            <stats-grid
-                :confidence="confidence"
-                :total-count="stats.totalCount"
-                :overall-risk="stats.overallRisk"
-                :risk-class="stats.riskClass"
-                :inference-time="stats.inferenceTime"
-                :class-counts="stats.classCounts"
-                :risk-counts="stats.riskCounts"
-                :max-risk-score="stats.maxRiskScore"
-                :inference-mode="stats.inferenceMode"
-                :inference-size="stats.inferenceSize"
-                :refined="stats.refined"
-            ></stats-grid>
+            <main class="app-content">
+                <div v-show="activeTab === 'detect'" class="tab-panel">
+                    <control-panel
+                        :has-file="!!currentFile"
+                        :is-detecting="isDetecting"
+                        @file-selected="onFileSelected"
+                        @detect="onDetect"
+                        @clear="onClear"
+                    ></control-panel>
+                    <display-area
+                        :file-preview-url="filePreviewUrl"
+                        :file-type="fileType"
+                        :detections="detections"
+                        :detection-timeline="detectionTimeline"
+                        :is-detecting="isDetecting"
+                        :show-badge="showBadge"
+                        :result-video-url="resultVideoUrl"
+                        :result-image-url="resultImageUrl"
+                    ></display-area>
 
-            <risk-analysis-panel
-                :detections="detections"
-            ></risk-analysis-panel>
+                    <stats-grid
+                        :confidence="confidence"
+                        :total-count="stats.totalCount"
+                        :overall-risk="stats.overallRisk"
+                        :risk-class="stats.riskClass"
+                        :inference-time="stats.inferenceTime"
+                        :class-counts="stats.classCounts"
+                        :risk-counts="stats.riskCounts"
+                        :max-risk-score="stats.maxRiskScore"
+                        :inference-mode="stats.inferenceMode"
+                        :inference-size="stats.inferenceSize"
+                        :refined="stats.refined"
+                    ></stats-grid>
+                </div>
 
-            <safety-advice-panel
-                :advice="safetyAdvice"
-            ></safety-advice-panel>
+                <div v-show="activeTab === 'risk'" class="tab-panel">
+                    <risk-analysis-panel
+                        :detections="detections"
+                    ></risk-analysis-panel>
+                </div>
 
-            <scene-insight-panel
-                :summary="sceneSummary"
-                :trace="decisionTrace"
-            ></scene-insight-panel>
+                <div v-show="activeTab === 'advice'" class="tab-panel">
+                    <safety-advice-panel
+                        :advice="safetyAdvice"
+                    ></safety-advice-panel>
+                </div>
 
-            <demo-script-panel
-                :script="demoScript"
-            ></demo-script-panel>
+                <div v-show="activeTab === 'scene'" class="tab-panel">
+                    <scene-insight-panel
+                        :summary="sceneSummary"
+                        :trace="decisionTrace"
+                    ></scene-insight-panel>
+                </div>
 
-            <simulation-panel
-                :presets="simulationPresets"
-                :scenario="simulationScenario"
-                :speed="simulationSpeed"
-                :duration="simulationDuration"
-                :result="simulationResult"
-                :is-simulating="isSimulating"
-                @scenario-change="onSimulationScenarioChange"
-                @speed-change="simulationSpeed = $event"
-                @duration-change="simulationDuration = $event"
-                @run="runSimulation"
-            ></simulation-panel>
+                <div v-show="activeTab === 'simulation'" class="tab-panel">
+                    <simulation-panel
+                        :presets="simulationPresets"
+                        :scenario="simulationScenario"
+                        :speed="simulationSpeed"
+                        :duration="simulationDuration"
+                        :result="simulationResult"
+                        :is-simulating="isSimulating"
+                        @scenario-change="onSimulationScenarioChange"
+                        @speed-change="simulationSpeed = $event"
+                        @duration-change="simulationDuration = $event"
+                        @run="runSimulation"
+                    ></simulation-panel>
+                </div>
 
-            <report-panel
-                :current-file="currentFile"
-                :stats="stats"
-                :detections="detections"
-                :advice="safetyAdvice"
-                :model-info="modelInfo"
-                @export-report="onExportReport"
-            ></report-panel>
+                <div v-show="activeTab === 'report'" class="tab-panel">
+                    <report-panel
+                        :current-file="currentFile"
+                        :stats="stats"
+                        :detections="detections"
+                        :advice="safetyAdvice"
+                        :model-info="modelInfo"
+                        @export-report="onExportReport"
+                    ></report-panel>
+                </div>
 
-            <algorithm-flow-panel></algorithm-flow-panel>
+                <div v-show="activeTab === 'system'" class="tab-panel">
+                    <system-info-panel
+                        :model-info="modelInfo"
+                        :health-status="healthStatus"
+                    ></system-info-panel>
+                </div>
 
-            <system-info-panel
-                :model-info="modelInfo"
-                :health-status="healthStatus"
-            ></system-info-panel>
+                <div v-show="activeTab === 'dashboard'" class="tab-panel">
+                    <dashboard-panel
+                        :dashboard="dashboard"
+                    ></dashboard-panel>
+                </div>
 
-            <dashboard-panel
-                :dashboard="dashboard"
-            ></dashboard-panel>
-
-            <history-panel
-                :history="historyList"
-                @download-log="onDownloadLog"
-                @clear-history="onClearHistory"
-            ></history-panel>
-        </main>
+                <div v-show="activeTab === 'history'" class="tab-panel">
+                    <history-panel
+                        :history="historyList"
+                        @download-log="onDownloadLog"
+                        @clear-history="onClearHistory"
+                    ></history-panel>
+                </div>
+            </main>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/vue.global.prod.js') }}"></script>

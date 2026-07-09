@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>预览历史记录 - 自动驾驶目标检测与风险提示系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:14px;">
+                    <div class="logo-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>预览历史记录</h1>
+                        <span class="logo-sub">Preview History</span>
+                    </div>
+                </a>
+            </div>
+            <div class="header-right">
+                <a href="/history" class="btn btn-ghost btn-sm">检测历史</a>
+                <a href="/" class="btn btn-ghost btn-sm">返回首页</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="main" style="padding-top:20px;">
+        <div class="preview-top-bar">
+            <div class="preview-info">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                <span id="record-count">加载中...</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-ghost btn-sm" onclick="downloadHistory()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    下载历史记录
+                </button>
+            </div>
+        </div>
+
+        <div id="preview-content" class="preview-timeline">
+            <div class="history-loading">加载中...</div>
+        </div>
+    </main>
+
+    <div id="preview-modal" class="preview-modal" style="display:none;" onclick="closeModal(event)">
+        <div class="preview-modal-content">
+            <div class="preview-modal-header">
+                <span id="modal-title">检测结果</span>
+                <button class="btn btn-ghost btn-sm" onclick="document.getElementById('preview-modal').style.display='none'">关闭</button>
+            </div>
+            <div id="modal-body" class="preview-modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        const RISK_MAP = {
+            high: { label: '高风险', cls: 'risk-high', color: '#ef4444' },
+            medium: { label: '中风险', cls: 'risk-medium', color: '#f59e0b' },
+            info: { label: '信息', cls: 'risk-info', color: '#3b82f6' },
+            low: { label: '低风险', cls: 'risk-low', color: '#10b981' },
+        };
+
+        function computeOverallRisk(detections) {
+            const levels = (detections || []).map(d => d.risk?.level || 'low');
+            if (levels.includes('high')) return 'high';
+            if (levels.includes('medium')) return 'medium';
+            return 'low';
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        function formatTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        let allRecords = [];
+
+        async function loadHistory() {
+            const container = document.getElementById('preview-content');
+            try {
+                const res = await fetch('/api/detections/history');
+                const json = await res.json();
+                if (json.code !== 0 || !json.data.items?.length) {
+                    container.innerHTML = '<div class="history-empty-page">暂无检测记录</div>';
+                    document.getElementById('record-count').textContent = '共 0 条记录';
+                    return;
+                }
+                allRecords = json.data.items;
+                document.getElementById('record-count').textContent = `共 ${allRecords.length} 条记录`;
+                renderTimeline(allRecords);
+            } catch {
+                container.innerHTML = '<div class="history-empty-page">加载失败，请检查后端服务</div>';
+            }
+        }
+
+        function renderTimeline(records) {
+            const container = document.getElementById('preview-content');
+            let html = '<div class="timeline">';
+            records.forEach((item, i) => {
+                const risk = computeOverallRisk(item.detections);
+                const info = RISK_MAP[risk] || RISK_MAP.low;
+                const isImage = item.type === 'image' || (item.filename || '').match(/\.(jpg|jpeg|png|bmp|webp)$/i);
+                const isVideo = item.type === 'video' || (item.filename || '').match(/\.(mp4|avi|mov|mkv)$/i);
+                const thumbSrc = isImage && item.result_filename ? `/results/${item.result_filename}` : '';
+                const videoSrc = isVideo && item.result_video ? item.result_video : '';
+
+                html += `<div class="timeline-item" onclick="showDetail(${i})">
+                    <div class="timeline-line">
+                        <div class="timeline-dot" style="background:${info.color};box-shadow:0 0 8px ${info.color}40;"></div>
+                        ${i < records.length - 1 ? '<div class="timeline-connector"></div>' : ''}
+                    </div>
+                    <div class="timeline-card">
+                        <div class="timeline-card-header">
+                            <span class="timeline-time">${formatTime(item.created_at)}</span>
+                            <span class="timeline-date">${formatDate(item.created_at).split(' ')[0]}</span>
+                            <span class="timeline-risk ${info.cls}">${info.label}</span>
+                        </div>
+                        <div class="timeline-card-body">
+                            ${thumbSrc ? `<div class="timeline-thumb"><img src="${thumbSrc}" alt="检测结果" loading="lazy"></div>` : ''}
+                            ${videoSrc ? `<div class="timeline-thumb"><video src="${videoSrc}" muted preload="metadata"></video><div class="timeline-video-badge">VIDEO</div></div>` : ''}
+                            <div class="timeline-meta">
+                                <span class="timeline-filename">${item.original_filename || item.filename || ''}</span>
+                                <span class="timeline-count">${item.count || item.total_objects || 0} 个目标</span>
+                                <span class="timeline-confidence">置信度: ${item.confidence != null ? item.confidence.toFixed(2) : '—'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function showDetail(index) {
+            const item = allRecords[index];
+            if (!item) return;
+            const modal = document.getElementById('preview-modal');
+            const body = document.getElementById('modal-body');
+            const title = document.getElementById('modal-title');
+            const risk = computeOverallRisk(item.detections);
+            const info = RISK_MAP[risk] || RISK_MAP.low;
+            const isImage = item.type === 'image' || (item.filename || '').match(/\.(jpg|jpeg|png|bmp|webp)$/i);
+            const isVideo = item.type === 'video' || (item.filename || '').match(/\.(mp4|avi|mov|mkv)$/i);
+
+            title.textContent = `${item.original_filename || item.filename || '检测结果'} - ${info.label}`;
+
+            let html = '';
+            if (isImage && item.result_filename) {
+                html += `<img src="/results/${item.result_filename}" style="max-width:100%;border-radius:8px;margin-bottom:16px;" alt="检测结果">`;
+            }
+            if (isVideo && item.result_video) {
+                html += `<video src="${item.result_video}" controls style="max-width:100%;border-radius:8px;margin-bottom:16px;"></video>`;
+            }
+
+            html += `<div class="detail-stats">
+                <div class="detail-stat"><span class="detail-label">检测时间</span><span class="detail-val">${formatDate(item.created_at)}</span></div>
+                <div class="detail-stat"><span class="detail-label">目标数量</span><span class="detail-val">${item.count || item.total_objects || 0}</span></div>
+                <div class="detail-stat"><span class="detail-label">风险等级</span><span class="detail-val ${info.cls}">${info.label}</span></div>
+                <div class="detail-stat"><span class="detail-label">置信度</span><span class="detail-val">${item.confidence != null ? item.confidence.toFixed(2) : '—'}</span></div>
+                ${item.inference_time_ms ? `<div class="detail-stat"><span class="detail-label">推理耗时</span><span class="detail-val">${item.inference_time_ms} ms</span></div>` : ''}
+            </div>`;
+
+            if (item.detections?.length) {
+                html += '<div class="detail-detections"><div class="detail-detections-title">检测目标列表</div>';
+                item.detections.forEach(d => {
+                    const r = d.risk || {};
+                    const ri = RISK_MAP[r.level] || RISK_MAP.low;
+                    html += `<div class="detail-det-item">
+                        <span class="detail-det-class">${d.class_name || d.class_name_cn || ''}</span>
+                        <span class="detail-det-conf">${((d.confidence || 0) * 100).toFixed(1)}%</span>
+                        <span class="detail-det-risk ${ri.cls}">${r.message || ri.label}</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        function closeModal(e) {
+            if (e.target.id === 'preview-modal') {
+                document.getElementById('preview-modal').style.display = 'none';
+            }
+        }
+
+        function downloadHistory() {
+            window.open('/api/detections/history', '_blank');
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>

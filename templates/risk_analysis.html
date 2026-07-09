@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>目标风险明细 - 自动驾驶目标检测与风险提示系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:14px;">
+                    <div class="logo-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>目标风险明细</h1>
+                        <span class="logo-sub">Risk Analysis Detail</span>
+                    </div>
+                </a>
+            </div>
+            <div class="header-right">
+                <a href="/" class="btn btn-ghost btn-sm">返回首页</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="risk-layout">
+        <nav class="risk-sidebar">
+            <div class="risk-sidebar-title">风险等级</div>
+            <a href="#section-high" class="risk-nav-item risk-nav-high" data-level="high" onclick="filterRisk('high', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                高风险 <span id="count-high" class="risk-nav-count">0</span>
+            </a>
+            <a href="#section-medium" class="risk-nav-item risk-nav-medium" data-level="medium" onclick="filterRisk('medium', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                中风险 <span id="count-medium" class="risk-nav-count">0</span>
+            </a>
+            <a href="#section-info" class="risk-nav-item risk-nav-info" data-level="info" onclick="filterRisk('info', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                交通提示 <span id="count-info" class="risk-nav-count">0</span>
+            </a>
+            <a href="#section-low" class="risk-nav-item risk-nav-low" data-level="low" onclick="filterRisk('low', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                低风险 <span id="count-low" class="risk-nav-count">0</span>
+            </a>
+            <div class="risk-sidebar-divider"></div>
+            <a href="#" class="risk-nav-item risk-nav-all active" onclick="filterRisk('all', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                全部 <span id="count-all" class="risk-nav-count">0</span>
+            </a>
+        </nav>
+
+        <main class="risk-main">
+            <div id="risk-content">
+                <div class="history-loading">加载中...</div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const RISK_MAP = {
+            high: { label: '高风险', cls: 'risk-high' },
+            medium: { label: '中风险', cls: 'risk-medium' },
+            info: { label: '交通提示', cls: 'risk-info' },
+            low: { label: '低风险', cls: 'risk-low' },
+        };
+
+        let allDetections = [];
+        let currentFilter = 'all';
+
+        async function loadRiskData() {
+            const container = document.getElementById('risk-content');
+            try {
+                const res = await fetch('/api/detections/history');
+                const json = await res.json();
+                if (json.code !== 0 || !json.data.items?.length) {
+                    container.innerHTML = '<div class="history-empty-page">暂无检测记录，请先在首页进行检测</div>';
+                    return;
+                }
+                const latest = json.data.items[0];
+                allDetections = latest.detections || [];
+                updateCounts();
+                renderDetections(allDetections);
+            } catch {
+                container.innerHTML = '<div class="history-empty-page">加载失败，请检查后端服务</div>';
+            }
+        }
+
+        function updateCounts() {
+            const counts = { high: 0, medium: 0, info: 0, low: 0 };
+            allDetections.forEach(d => {
+                const level = d.risk?.level || d.risk_level || 'low';
+                counts[level] = (counts[level] || 0) + 1;
+            });
+            document.getElementById('count-high').textContent = counts.high;
+            document.getElementById('count-medium').textContent = counts.medium;
+            document.getElementById('count-info').textContent = counts.info;
+            document.getElementById('count-low').textContent = counts.low;
+            document.getElementById('count-all').textContent = allDetections.length;
+        }
+
+        function renderDetections(list) {
+            const container = document.getElementById('risk-content');
+            if (!list.length) {
+                container.innerHTML = '<div class="history-empty-page">该分类下暂无检测目标</div>';
+                return;
+            }
+            const grouped = { high: [], medium: [], info: [], low: [] };
+            list.forEach(d => {
+                const level = d.risk?.level || d.risk_level || 'low';
+                if (grouped[level]) grouped[level].push(d);
+            });
+
+            let html = '';
+            for (const [level, items] of Object.entries(grouped)) {
+                if (!items.length) continue;
+                const info = RISK_MAP[level];
+                html += `<div class="risk-section" id="section-${level}">
+                    <div class="risk-section-header">
+                        <span class="risk-section-dot ${info.cls}"></span>
+                        <h3>${info.label}</h3>
+                        <span class="risk-section-count">${items.length} 个目标</span>
+                    </div>
+                    <div class="risk-card-list">`;
+                items.forEach((d, i) => {
+                    html += `<div class="risk-card">
+                        <div class="risk-card-main">
+                            <strong class="risk-card-name">${d.class_name_cn || d.class_name || '-'}</strong>
+                            <span class="risk-card-conf">${((d.confidence || 0) * 100).toFixed(1)}%</span>
+                            <span class="risk-card-level ${info.cls}">${info.label}</span>
+                        </div>
+                        <p class="risk-card-reason">${d.risk?.reason || d.risk_reason || '暂无风险原因'}</p>
+                        <div class="risk-card-metrics">
+                            <span>风险分 ${d.risk?.score || d.risk_score || 0}</span>
+                            <span>路径重叠 ${Math.round((d.lane_overlap || 0) * 100)}%</span>
+                            <span>距离分 ${d.distance_score || 0}</span>
+                        </div>
+                    </div>`;
+                });
+                html += '</div></div>';
+            }
+            container.innerHTML = html;
+        }
+
+        function filterRisk(level, el) {
+            event.preventDefault();
+            currentFilter = level;
+            document.querySelectorAll('.risk-nav-item').forEach(a => a.classList.remove('active'));
+            el.classList.add('active');
+            if (level === 'all') {
+                renderDetections(allDetections);
+            } else {
+                renderDetections(allDetections.filter(d => (d.risk?.level || d.risk_level || 'low') === level));
+            }
+        }
+
+        loadRiskData();
+    </script>
+</body>
+</html>

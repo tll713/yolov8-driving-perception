@@ -73,6 +73,18 @@ def create_app():
 
         return render_template("admin.html")
 
+    @app.get("/history")
+    def history_page():
+        from flask import render_template
+
+        return render_template("history.html")
+
+    @app.get("/risk-analysis")
+    def risk_analysis_page():
+        from flask import render_template
+
+        return render_template("risk_analysis.html")
+
     @app.get("/api")
     def api_index():
         return jsonify(
