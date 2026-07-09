@@ -7,7 +7,7 @@ const app = createApp({
         const filePreviewUrl = ref('')
         const fileType = ref('')
         const detections = ref([])
-        const videoFrames = ref([])
+        const detectionTimeline = ref([])
         const resultVideoUrl = ref('')
         const isDetecting = ref(false)
         const showBadge = ref(false)
@@ -18,7 +18,6 @@ const app = createApp({
         const sceneSummary = ref(null)
         const decisionTrace = ref([])
         const demoScript = ref([])
-        const videoTimeline = ref([])
         const dashboard = ref({})
         const simulationPresets = ref([])
         const simulationScenario = ref('pedestrian_crossing')
@@ -27,6 +26,8 @@ const app = createApp({
         const simulationResult = ref(null)
         const isSimulating = ref(false)
         const currentUser = ref(localStorage.getItem('currentUser') || '')
+        const detectionRequestId = ref(0)
+        const pollTimerId = ref(null)
 
         const stats = reactive({
             totalCount: 0,
@@ -101,11 +102,17 @@ const app = createApp({
         }
 
         function onFileSelected(file) {
+            const requestId = ++detectionRequestId.value
             currentFile.value = file
+            filePreviewUrl.value = ''
+            fileType.value = ''
+            resetDetectionResults()
             const reader = new FileReader()
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
+                if (requestId !== detectionRequestId.value) return
                 filePreviewUrl.value = e.target.result
                 fileType.value = file.type
+                await onDetect(requestId)
             }
             reader.readAsDataURL(file)
         }
@@ -123,40 +130,50 @@ const app = createApp({
             stats.refined = false
         }
 
-        function onClear() {
-            currentFile.value = null
-            filePreviewUrl.value = ''
-            fileType.value = ''
+        function resetDetectionResults() {
+            stopVideoPolling()
             detections.value = []
-            videoFrames.value = []
+            detectionTimeline.value = []
             resultVideoUrl.value = ''
             safetyAdvice.value = []
             sceneSummary.value = null
             decisionTrace.value = []
             demoScript.value = []
-            videoTimeline.value = []
             confidence.value = null
             showBadge.value = false
             resetStats()
         }
 
-        async function onDetect() {
+        function onClear() {
+            ++detectionRequestId.value
+            currentFile.value = null
+            filePreviewUrl.value = ''
+            fileType.value = ''
+            resetDetectionResults()
+        }
+
+        async function onDetect(requestId = ++detectionRequestId.value) {
             if (!currentFile.value) return
             isDetecting.value = true
             detections.value = []
-            videoFrames.value = []
+            detectionTimeline.value = []
             resultVideoUrl.value = ''
 
             const isImage = fileType.value.startsWith('image/')
-            const endpoint = isImage ? '/api/detections/images' : '/api/detections/videos'
+            if (!isImage) {
+                await startVideoDetectionJob(requestId)
+                return
+            }
 
             try {
                 const formData = new FormData()
                 formData.append('file', currentFile.value)
                 formData.append('confidence', 0.5)
 
-                const res = await fetch(endpoint, { method: 'POST', body: formData })
+                const res = await fetch('/api/detections/images', { method: 'POST', body: formData })
                 const json = await res.json()
+
+                if (requestId !== detectionRequestId.value) return
 
                 if (json.code !== 0) {
                     alert(json.message || '检测失败')
@@ -164,28 +181,114 @@ const app = createApp({
                 }
 
                 const data = json.data
-                resultVideoUrl.value = data.result_video || ''
-                videoFrames.value = data.frames || []
-                detections.value = isImage
-                    ? (data.detections || [])
-                    : (data.detections || videoFrames.value.flatMap(frame => frame.detections || []))
-                safetyAdvice.value = data.safety_advice || []
-                sceneSummary.value = data.scene_summary || null
-                decisionTrace.value = data.decision_trace || []
-                demoScript.value = data.demo_script || []
-                videoTimeline.value = data.video_timeline || []
-
-                updateStats(data, isImage)
+                applyDetectionResult(data, true)
                 await fetchHistory()
 
                 showBadge.value = true
                 setTimeout(() => { showBadge.value = false }, 3000)
             } catch (err) {
+                if (requestId !== detectionRequestId.value) return
                 console.error(err)
                 alert('检测失败，请检查后端服务是否启动')
             } finally {
+                if (requestId === detectionRequestId.value) {
+                    isDetecting.value = false
+                }
+            }
+        }
+
+        async function startVideoDetectionJob(requestId) {
+            try {
+                const formData = new FormData()
+                formData.append('file', currentFile.value)
+                formData.append('confidence', 0.5)
+
+                const res = await fetch('/api/detections/videos/jobs', { method: 'POST', body: formData })
+                const json = await res.json()
+
+                if (requestId !== detectionRequestId.value) return
+
+                if (json.code !== 0) {
+                    alert(json.message || '视频检测任务创建失败')
+                    isDetecting.value = false
+                    return
+                }
+
+                await pollVideoDetectionJob(json.data.job_id, requestId)
+            } catch (err) {
+                if (requestId !== detectionRequestId.value) return
+                console.error(err)
+                alert('视频检测任务创建失败，请检查后端服务是否启动')
                 isDetecting.value = false
             }
+        }
+
+        async function pollVideoDetectionJob(jobId, requestId) {
+            stopVideoPolling()
+
+            const fetchJob = async () => {
+                if (requestId !== detectionRequestId.value) {
+                    stopVideoPolling()
+                    return false
+                }
+
+                try {
+                    const res = await fetch(`/api/detections/videos/jobs/${jobId}`)
+                    const json = await res.json()
+                    if (json.code !== 0) {
+                        throw new Error(json.message || '视频检测任务查询失败')
+                    }
+
+                    const data = json.data
+                    detectionTimeline.value = data.detection_timeline || []
+                    applyDetectionResult(data, false)
+
+                    if (data.status === 'completed') {
+                        stopVideoPolling()
+                        applyDetectionResult(data.result || data, false)
+                        await fetchHistory()
+                        showBadge.value = true
+                        setTimeout(() => { showBadge.value = false }, 3000)
+                        isDetecting.value = false
+                        return false
+                    } else if (data.status === 'failed') {
+                        stopVideoPolling()
+                        alert(data.error || '视频检测任务失败')
+                        isDetecting.value = false
+                        return false
+                    }
+                    return true
+                } catch (err) {
+                    stopVideoPolling()
+                    if (requestId !== detectionRequestId.value) return false
+                    console.error(err)
+                    alert('视频检测任务查询失败，请检查后端服务是否启动')
+                    isDetecting.value = false
+                    return false
+                }
+            }
+
+            if (await fetchJob()) {
+                pollTimerId.value = setInterval(fetchJob, 800)
+            }
+        }
+
+        function stopVideoPolling() {
+            if (pollTimerId.value) {
+                clearInterval(pollTimerId.value)
+                pollTimerId.value = null
+            }
+        }
+
+        function applyDetectionResult(data, isImage) {
+            resultVideoUrl.value = data.result_video || ''
+            detectionTimeline.value = data.detection_timeline || detectionTimeline.value
+            detections.value = data.detections || []
+            safetyAdvice.value = data.safety_advice || []
+            sceneSummary.value = data.scene_summary || null
+            decisionTrace.value = data.decision_trace || []
+            demoScript.value = data.demo_script || []
+            updateStats(data, isImage)
         }
 
         function updateStats(data, isImage) {
@@ -328,10 +431,10 @@ const app = createApp({
         }
 
         return {
-            currentFile, filePreviewUrl, fileType, detections, videoFrames, resultVideoUrl,
+            currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl,
             isDetecting, showBadge, confidence,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
-            sceneSummary, decisionTrace, demoScript, videoTimeline, currentUser,
+            sceneSummary, decisionTrace, demoScript, currentUser,
             simulationPresets, simulationScenario, simulationSpeed, simulationDuration,
             simulationResult, isSimulating,
             onFileSelected, onClear, onDetect, onDownloadLog, onClearHistory, onExportReport,

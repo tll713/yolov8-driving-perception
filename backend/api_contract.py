@@ -2,6 +2,8 @@ API_ENDPOINTS = {
     "health": "/api/health",
     "image_detection": "/api/detections/images",
     "video_detection": "/api/detections/videos",
+    "video_detection_job_create": "/api/detections/videos/jobs",
+    "video_detection_job_status": "/api/detections/videos/jobs/<job_id>",
     "history": "/api/detections/history",
     "history_clear": "/api/detections/history/clear",
     "detection_record": "/api/detections/records/<record_id>",
