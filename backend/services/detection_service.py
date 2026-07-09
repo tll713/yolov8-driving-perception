@@ -18,6 +18,7 @@ from backend.services.demo_analysis_service import (
 from backend.services.history_service import append_history
 from backend.services.model_service import get_model
 from backend.services.result_renderer import render_detection_image
+from backend.services.model_service import get_model
 from detect import detect_image
 from risk import assess_detection, summarize_risk
 from utils import save_upload
@@ -115,6 +116,9 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    model = get_model(DEFAULT_MODEL_PATH)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
     model = get_model(DEFAULT_MODEL_PATH)

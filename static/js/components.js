@@ -132,7 +132,8 @@ const DisplayArea = {
         detectionTimeline: Array,
         isDetecting: Boolean,
         showBadge: Boolean,
-        resultVideoUrl: String
+        resultVideoUrl: String,
+        resultImageUrl: String
     },
     setup(props) {
         const canvasRef = ref(null)
@@ -283,12 +284,13 @@ const DisplayArea = {
                 link.click()
                 return
             }
-            const canvas = canvasRef.value
-            if (!canvas) return
-            const link = document.createElement('a')
-            link.download = 'detection_result.png'
-            link.href = canvas.toDataURL('image/png')
-            link.click()
+            if (props.resultImageUrl) {
+                const link = document.createElement('a')
+                link.download = 'detection_result.png'
+                link.href = props.resultImageUrl
+                link.click()
+                return
+            }
         }
 
         return {
@@ -311,6 +313,15 @@ const DisplayArea = {
                 <span v-else-if="showBadge" class="panel-badge">NEW</span>
                 <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">下载结果</button>
             </div>
+            <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
+                <div v-if="isDetecting" class="placeholder">
+                    <svg class="spin" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                    </svg>
+                    <p>正在分析...</p>
+                </div>
+                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
+                    <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
             <div class="panel-body">
                 <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
