@@ -31,7 +31,7 @@
                 :file-preview-url="filePreviewUrl"
                 :file-type="fileType"
                 :detections="detections"
-                :video-frames="videoFrames"
+                :detection-timeline="detectionTimeline"
                 :is-detecting="isDetecting"
                 :show-badge="showBadge"
                 :result-video-url="resultVideoUrl"
@@ -67,7 +67,6 @@
 
             <demo-script-panel
                 :script="demoScript"
-                :timeline="videoTimeline"
             ></demo-script-panel>
 
             <simulation-panel

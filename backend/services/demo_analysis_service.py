@@ -178,33 +178,6 @@ def build_demo_script(detections):
     return script[:5]
 
 
-def build_video_timeline(frames):
-    timeline = []
-    previous_score = None
-    for frame in frames:
-        score = int(frame.get("max_risk_score") or 0)
-        if previous_score is None:
-            trend = "起始"
-        elif score > previous_score + 8:
-            trend = "风险上升"
-        elif score < previous_score - 8:
-            trend = "风险下降"
-        else:
-            trend = "基本稳定"
-        previous_score = score
-        timeline.append(
-            {
-                "frame_index": frame.get("frame_index"),
-                "timestamp_sec": frame.get("timestamp_sec"),
-                "risk_level": frame.get("max_risk_level", "low"),
-                "risk_score": score,
-                "object_count": frame.get("count", 0),
-                "trend": trend,
-            }
-        )
-    return timeline
-
-
 def build_safety_advice(detections):
     advice = []
     levels = [_risk_level(item) for item in detections]

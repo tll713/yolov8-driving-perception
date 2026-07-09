@@ -1,5 +1,5 @@
-(() => {
-const { ref, watch, nextTick } = Vue
+﻿(() => {
+const { ref, watch, nextTick, onBeforeUnmount } = Vue
 
 const RISK_STYLE_MAP = {
     high: { label: '高风险', cls: 'risk-high' },
@@ -129,69 +129,94 @@ const DisplayArea = {
         filePreviewUrl: String,
         fileType: String,
         detections: Array,
-        videoFrames: Array,
+        detectionTimeline: Array,
         isDetecting: Boolean,
         showBadge: Boolean,
         resultVideoUrl: String,
         resultImageUrl: String
     },
     setup(props) {
-        const canvasRef = ref(null)
+        const videoRef = ref(null)
+        const videoOverlayRef = ref(null)
+        const videoOverlayFrameId = ref(null)
 
-        watch(() => [props.detections, props.filePreviewUrl], () => {
-            if (props.detections.length && props.filePreviewUrl && props.fileType && props.fileType.startsWith('image/')) {
-                nextTick(() => drawBoxes())
+        watch(() => [props.detectionTimeline, props.resultVideoUrl, props.filePreviewUrl], () => {
+            if (props.fileType && props.fileType.startsWith('video/')) {
+                nextTick(() => drawVideoOverlay())
             }
         }, { deep: true })
 
-        function drawBoxes() {
-            const canvas = canvasRef.value
-            if (!canvas) return
+        onBeforeUnmount(() => stopVideoOverlayLoop())
+
+        function drawVideoOverlay() {
+            const video = videoRef.value
+            const canvas = videoOverlayRef.value
+            if (!video || !canvas) return
+            const rect = video.getBoundingClientRect()
+            if (!rect.width || !rect.height) return
+
+            canvas.width = Math.round(rect.width)
+            canvas.height = Math.round(rect.height)
             const ctx = canvas.getContext('2d')
-            const img = new Image()
-            img.onload = () => {
-                canvas.width = img.width
-                canvas.height = img.height
-                ctx.drawImage(img, 0, 0)
-                drawDrivingCorridor(ctx, canvas.width, canvas.height)
-                props.detections.forEach(d => {
-                    const [x1, y1, x2, y2] = d.bbox
-                    const risk = d.risk || {}
-                    const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
-                    ctx.strokeStyle = color
-                    ctx.lineWidth = 3
-                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
-                    const label = `${d.class_name_cn || d.class_name} ${(d.confidence * 100).toFixed(0)}% ${risk.score || 0}`
-                    ctx.font = '14px JetBrains Mono, monospace'
-                    const tw = ctx.measureText(label).width
-                    ctx.fillStyle = color
-                    ctx.fillRect(x1, Math.max(0, y1 - 22), tw + 10, 22)
-                    ctx.fillStyle = '#fff'
-                    ctx.fillText(label, x1 + 5, Math.max(14, y1 - 6))
-                })
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+            const timeline = props.detectionTimeline || []
+            if (!timeline.length) return
+            const current = video.currentTime || 0
+            let frame = timeline[0]
+            for (const item of timeline) {
+                if (item.timestamp_sec <= current + 0.35) frame = item
+                else break
             }
-            img.src = props.filePreviewUrl
+
+            const sourceWidth = frame.image_width || video.videoWidth || canvas.width
+            const sourceHeight = frame.image_height || video.videoHeight || canvas.height
+            const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight)
+            const drawWidth = sourceWidth * scale
+            const drawHeight = sourceHeight * scale
+            const offsetX = (canvas.width - drawWidth) / 2
+            const offsetY = (canvas.height - drawHeight) / 2
+
+            ;(frame.detections || []).forEach(d => {
+                const [x1, y1, x2, y2] = d.bbox
+                const risk = d.risk || {}
+                const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
+                const left = offsetX + x1 * scale
+                const top = offsetY + y1 * scale
+                const width = (x2 - x1) * scale
+                const height = (y2 - y1) * scale
+                ctx.strokeStyle = color
+                ctx.lineWidth = 2
+                ctx.strokeRect(left, top, width, height)
+                const label = `${d.class_name_cn || d.class_name} ${((d.confidence || 0) * 100).toFixed(0)}% ${risk.score || 0}`
+                ctx.font = '13px JetBrains Mono, monospace'
+                const labelWidth = ctx.measureText(label).width + 8
+                ctx.fillStyle = color
+                ctx.fillRect(left, Math.max(0, top - 21), labelWidth, 20)
+                ctx.fillStyle = '#fff'
+                ctx.fillText(label, left + 4, Math.max(13, top - 6))
+            })
         }
 
-        function drawDrivingCorridor(ctx, width, height) {
-            const nearLeft = width * 0.1
-            const nearRight = width * 0.9
-            const farLeft = width * 0.38
-            const farRight = width * 0.62
-            const horizon = height * 0.38
-            ctx.save()
-            ctx.beginPath()
-            ctx.moveTo(nearLeft, height)
-            ctx.lineTo(farLeft, horizon)
-            ctx.lineTo(farRight, horizon)
-            ctx.lineTo(nearRight, height)
-            ctx.closePath()
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.12)'
-            ctx.fill()
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.55)'
-            ctx.lineWidth = 3
-            ctx.stroke()
-            ctx.restore()
+        function drawVideoOverlayFrame() {
+            drawVideoOverlay()
+            const video = videoRef.value
+            if (video && !video.paused && !video.ended) {
+                videoOverlayFrameId.value = requestAnimationFrame(drawVideoOverlayFrame)
+            }
+        }
+
+        function startVideoOverlayLoop() {
+            stopVideoOverlayLoop()
+            videoOverlayFrameId.value = requestAnimationFrame(drawVideoOverlayFrame)
+        }
+
+        function stopVideoOverlayLoop() {
+            if (videoOverlayFrameId.value) {
+                cancelAnimationFrame(videoOverlayFrameId.value)
+                videoOverlayFrameId.value = null
+            }
+            drawVideoOverlay()
         }
 
         function downloadResult() {
@@ -207,72 +232,63 @@ const DisplayArea = {
                 link.download = 'detection_result.png'
                 link.href = props.resultImageUrl
                 link.click()
-                return
             }
         }
 
-        return { downloadResult }
-        return { canvasRef, downloadResult }
+        return {
+            videoRef,
+            videoOverlayRef,
+            drawVideoOverlay,
+            startVideoOverlayLoop,
+            stopVideoOverlayLoop,
+            downloadResult
+        }
     },
     template: `
     <section class="display-area">
-        <div class="panel">
-            <div class="panel-header">
-                <span class="panel-dot"></span>
-                <h3>原始画面</h3>
-            </div>
-            <div class="panel-body">
-                <template v-if="filePreviewUrl">
-                    <img v-if="fileType && fileType.startsWith('image/')" :src="filePreviewUrl" alt="原始图片" class="animate-in" />
-                    <video v-else-if="fileType && fileType.startsWith('video/')" controls class="animate-in">
-                        <source :src="filePreviewUrl" :type="fileType" />
-                    </video>
-                </template>
-                <div v-else class="placeholder"><p>请上传图片或视频</p></div>
-            </div>
-        </div>
         <div class="panel panel-highlight">
             <div class="panel-header">
                 <span class="panel-dot dot-accent"></span>
                 <h3>检测结果</h3>
-                <span v-if="showBadge" class="panel-badge">NEW</span>
+                <span v-if="isDetecting" class="panel-badge">检测中</span>
+                <span v-else-if="showBadge" class="panel-badge">NEW</span>
                 <button v-if="detections && detections.length" class="btn btn-ghost btn-sm" @click="downloadResult" style="margin-left:auto;">下载结果</button>
             </div>
             <div class="panel-body" :class="{ 'panel-body-auto': detections && detections.length }">
-                <div v-if="isDetecting" class="placeholder">
-                    <svg class="spin" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                    </svg>
-                    <p>正在分析...</p>
-                </div>
+                <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
-            <div class="panel-body">
-                <div v-if="isDetecting" class="placeholder"><p>正在分析场景风险...</p></div>
-                <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/')">
-                    <canvas ref="canvasRef" class="result-canvas animate-in"></canvas>
                 </template>
-                <div v-else-if="resultVideoUrl && fileType && fileType.startsWith('video/')" class="video-result-wrap animate-in">
-                    <video :src="resultVideoUrl" controls muted class="result-video"></video>
-                </div>
-                <div v-else-if="videoFrames && videoFrames.length" class="frame-list animate-in">
-                    <div class="frame-card" v-for="frame in videoFrames" :key="frame.frame_index">
-                        <img v-if="frame.result_filename" :src="'/results/' + frame.result_filename" alt="关键帧标注图" />
-                        <div>
-                            <span>关键帧 {{ frame.frame_index }}</span>
-                            <strong>{{ frame.count }} 个目标</strong>
-                            <small>{{ frame.timestamp_sec != null ? frame.timestamp_sec + 's' : '时间未知' }}</small>
-                            <span :class="'risk-' + (frame.max_risk_level || 'low')">{{ frame.max_risk_level || 'low' }}</span>
-                        </div>
+                <div v-else-if="fileType && fileType.startsWith('video/') && (filePreviewUrl || resultVideoUrl)" class="video-result-wrap animate-in">
+                    <div class="video-overlay-wrap">
+                        <video
+                            ref="videoRef"
+                            :src="filePreviewUrl || resultVideoUrl"
+                            controls
+                            muted
+                            class="result-video"
+                            @loadedmetadata="drawVideoOverlay"
+                            @loadeddata="drawVideoOverlay"
+                            @play="startVideoOverlayLoop"
+                            @pause="stopVideoOverlayLoop"
+                            @ended="stopVideoOverlayLoop"
+                            @seeked="drawVideoOverlay"
+                        ></video>
+                        <canvas ref="videoOverlayRef" class="video-overlay-canvas"></canvas>
                     </div>
                 </div>
-                <div v-else class="placeholder"><p>检测后将在此显示</p></div>
+                <template v-else-if="filePreviewUrl">
+                    <img v-if="fileType && fileType.startsWith('image/')" :src="filePreviewUrl" alt="检测预览" class="result-preview animate-in" />
+                    <video v-else-if="fileType && fileType.startsWith('video/')" controls muted class="result-video animate-in">
+                        <source :src="filePreviewUrl" :type="fileType" />
+                    </video>
+                </template>
+                <div v-else class="placeholder"><p>选择文件后将在此实时显示</p></div>
             </div>
         </div>
     </section>
     `
 }
-
 const StatsGrid = {
     props: {
         confidence: Number,
@@ -427,10 +443,6 @@ const SceneInsightPanel = {
 const DemoScriptPanel = {
     props: {
         script: Array,
-        timeline: Array,
-    },
-    methods: {
-        riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
     },
     template: `
     <section class="flow-panel">
@@ -441,14 +453,6 @@ const DemoScriptPanel = {
             </ol>
         </div>
         <div v-else class="empty-block">检测完成后自动生成答辩讲解要点。</div>
-        <div v-if="timeline && timeline.length" class="timeline-list">
-            <div class="timeline-item" v-for="item in timeline" :key="item.frame_index">
-                <span>帧 {{ item.frame_index }}</span>
-                <strong :class="riskClass(item.risk_level)">{{ item.risk_score }}</strong>
-                <small>{{ item.timestamp_sec != null ? item.timestamp_sec + 's' : '-' }}</small>
-                <em>{{ item.trend }}</em>
-            </div>
-        </div>
     </section>
     `
 }

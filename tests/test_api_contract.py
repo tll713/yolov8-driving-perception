@@ -8,6 +8,8 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(API_ENDPOINTS["health"], "/api/health")
         self.assertEqual(API_ENDPOINTS["image_detection"], "/api/detections/images")
         self.assertEqual(API_ENDPOINTS["video_detection"], "/api/detections/videos")
+        self.assertEqual(API_ENDPOINTS["video_detection_job_create"], "/api/detections/videos/jobs")
+        self.assertEqual(API_ENDPOINTS["video_detection_job_status"], "/api/detections/videos/jobs/<job_id>")
         self.assertEqual(API_ENDPOINTS["history"], "/api/detections/history")
         self.assertEqual(API_ENDPOINTS["history_clear"], "/api/detections/history/clear")
         self.assertEqual(API_ENDPOINTS["detection_record"], "/api/detections/records/<record_id>")
