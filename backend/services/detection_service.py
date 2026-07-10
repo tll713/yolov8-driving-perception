@@ -16,7 +16,7 @@ from backend.services.demo_analysis_service import (
     build_scene_summary,
 )
 from backend.services.history_service import append_history
-from backend.services.lane_service import analyze_lane_image, apply_driving_advice, draw_lane_overlay
+from backend.services.lane_service import analyze_lane_image, apply_driving_advice
 from backend.services.model_service import get_model
 from backend.services.result_renderer import render_detection_image
 from backend.services.model_service import get_model
@@ -57,6 +57,14 @@ def _save_to_database(result):
         result["database_saved"] = False
     else:
         result["database_saved"] = True
+
+
+def _lane_analysis_without_visual_lines(lane_analysis):
+    if not lane_analysis:
+        return lane_analysis
+    clean_lane_analysis = dict(lane_analysis)
+    clean_lane_analysis["lines"] = []
+    return clean_lane_analysis
 
 
 def detect_uploaded_image(upload, confidence=0.5):
@@ -175,7 +183,6 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                     ):
                         all_detections.append(detection)
 
-            frame = draw_lane_overlay(frame, frame_lane_analysis)
             detections_to_draw = frame_detections or last_frame_detections
             for detection in detections_to_draw:
                 x1, y1, x2, y2 = detection["bbox"]
@@ -214,7 +221,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                         "frame": frame.copy(),
                         "detections": frame_detections,
                         "all_detections": list(all_detections),
-                        "lane_analysis": frame_lane_analysis,
+                        "lane_analysis": _lane_analysis_without_visual_lines(frame_lane_analysis),
                         **risk_summary,
                         **_build_demo_fields(all_detections),
                     }
@@ -249,7 +256,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
         "total_objects": len(all_detections),
         "inference_time_ms": 0,
         **risk_summary,
-        "lane_analysis": last_lane_analysis,
+        "lane_analysis": _lane_analysis_without_visual_lines(last_lane_analysis),
         **_build_demo_fields(all_detections),
         "detections": all_detections,
     }

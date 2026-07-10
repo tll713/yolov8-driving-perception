@@ -123,11 +123,11 @@ def _level_from_score(class_name, score, lane_overlap, confidence, distance_scor
     if class_name in VEHICLE_CLASSES:
         is_center_path = zone.endswith("center")
         is_critical_vehicle = (
-            score >= 92
-            and distance_score >= 78
-            and area_ratio >= 0.09
-            and lane_overlap >= 0.68
-            and confidence >= 0.58
+            score >= 88
+            and distance_score >= 72
+            and area_ratio >= 0.07
+            and lane_overlap >= 0.58
+            and confidence >= 0.55
             and is_center_path
         )
         if is_critical_vehicle:
