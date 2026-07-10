@@ -73,6 +73,12 @@ def create_app():
 
         return render_template("admin.html")
 
+    @app.get("/profile")
+    def profile_page():
+        from flask import render_template
+
+        return render_template("profile.html")
+
     @app.get("/history")
     def history_page():
         from flask import render_template

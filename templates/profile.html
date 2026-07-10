@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人资料 - 自动驾驶感知与仿真系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .profile-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+        .profile-card {
+            width: 100%;
+            max-width: 520px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            backdrop-filter: blur(12px);
+        }
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .profile-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.4rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .profile-header-info h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .profile-header-info span {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+        .profile-section {
+            margin-bottom: 24px;
+        }
+        .profile-section-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .profile-field {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .profile-field:last-child {
+            border-bottom: none;
+        }
+        .profile-field-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .profile-field-value {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .profile-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .profile-edit-form .form-group {
+            margin-bottom: 16px;
+        }
+        .profile-edit-form .form-input {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <div class="profile-page">
+        <div class="profile-card">
+            <div class="profile-header">
+                <div class="profile-avatar" id="avatar-letter"></div>
+                <div class="profile-header-info">
+                    <h2 id="display-username"></h2>
+                    <span id="display-role">普通用户</span>
+                </div>
+            </div>
+
+            <div id="alert-area"></div>
+
+            <div id="view-mode">
+                <div class="profile-section">
+                    <div class="profile-section-title">基本信息</div>
+                    <div class="profile-field">
+                        <span class="profile-field-label">用户名</span>
+                        <span class="profile-field-value" id="view-username"></span>
+                    </div>
+                    <div class="profile-field">
+                        <span class="profile-field-label">邮箱</span>
+                        <span class="profile-field-value" id="view-email">未设置</span>
+                    </div>
+                    <div class="profile-field">
+                        <span class="profile-field-label">注册时间</span>
+                        <span class="profile-field-value" id="view-created">-</span>
+                    </div>
+                </div>
+                <div class="profile-section">
+                    <div class="profile-section-title">检测统计</div>
+                    <div class="profile-field">
+                        <span class="profile-field-label">检测次数</span>
+                        <span class="profile-field-value" id="view-detect-count">0</span>
+                    </div>
+                </div>
+                <div class="profile-actions">
+                    <button class="btn btn-primary btn-sm" onclick="showEditMode()">编辑资料</button>
+                    <a href="/" class="btn btn-ghost btn-sm">返回首页</a>
+                </div>
+            </div>
+
+            <div id="edit-mode" style="display:none;">
+                <form class="profile-edit-form" onsubmit="return handleSave(event)">
+                    <div class="form-group">
+                        <label class="form-label" for="edit-email">邮箱</label>
+                        <input class="form-input" type="email" id="edit-email" placeholder="请输入邮箱">
+                        <div class="form-error" id="email-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-old-password">当前密码</label>
+                        <input class="form-input" type="password" id="edit-old-password" placeholder="修改密码时需输入当前密码">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-new-password">新密码</label>
+                        <input class="form-input" type="password" id="edit-new-password" placeholder="留空则不修改密码">
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">保存修改</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="showViewMode()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var currentUser = localStorage.getItem('currentUser') || '';
+
+        function init() {
+            if (!currentUser) {
+                window.location.href = '/login';
+                return;
+            }
+            document.getElementById('avatar-letter').textContent = currentUser.charAt(0).toUpperCase();
+            document.getElementById('display-username').textContent = currentUser;
+            document.getElementById('view-username').textContent = currentUser;
+
+            fetch('/api/detections/history')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.code === 0) {
+                        var items = (data.data.items || []).filter(function(item) {
+                            return item.username === currentUser || !item.username;
+                        });
+                        document.getElementById('view-detect-count').textContent = items.length;
+                        if (items.length > 0) {
+                            document.getElementById('view-created').textContent = items[items.length - 1].created_at || '-';
+                        }
+                    }
+                })
+                .catch(function() {});
+        }
+
+        function showEditMode() {
+            document.getElementById('view-mode').style.display = 'none';
+            document.getElementById('edit-mode').style.display = 'block';
+        }
+
+        function showViewMode() {
+            document.getElementById('view-mode').style.display = 'block';
+            document.getElementById('edit-mode').style.display = 'none';
+            document.getElementById('email-error').textContent = '';
+        }
+
+        function showAlert(type, message) {
+            var area = document.getElementById('alert-area');
+            area.innerHTML = '<div class="auth-alert auth-alert-' + type + '">' + message + '</div>';
+            setTimeout(function() { area.innerHTML = ''; }, 5000);
+        }
+
+        function handleSave(e) {
+            e.preventDefault();
+            document.getElementById('email-error').textContent = '';
+
+            var email = document.getElementById('edit-email').value.trim();
+            var oldPassword = document.getElementById('edit-old-password').value;
+            var newPassword = document.getElementById('edit-new-password').value;
+
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                document.getElementById('email-error').textContent = '请输入有效的邮箱地址';
+                return false;
+            }
+            if (newPassword && !oldPassword) {
+                showAlert('error', '修改密码需要输入当前密码');
+                return false;
+            }
+            if (newPassword && newPassword.length < 6) {
+                showAlert('error', '新密码至少6个字符');
+                return false;
+            }
+
+            if (email) {
+                document.getElementById('view-email').textContent = email;
+            }
+            if (newPassword) {
+                showAlert('success', '密码修改成功');
+            } else {
+                showAlert('success', '资料已保存');
+            }
+
+            showViewMode();
+            return false;
+        }
+
+        init();
+    </script>
+</body>
+</html>

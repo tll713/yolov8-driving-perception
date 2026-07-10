@@ -128,7 +128,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     model = get_model(DEFAULT_MODEL_PATH)
     result_path = RESULT_DIR / f"{upload_path.stem}_result.mp4"
     RESULT_DIR.mkdir(exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(str(result_path), fourcc, fps, (width, height))
 
     all_detections = []

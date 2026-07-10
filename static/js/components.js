@@ -46,7 +46,7 @@ const AppHeader = {
                     <span class="status-text">{{ statusText }}</span>
                 </div>
                 <div class="header-auth" v-if="currentUser">
-                    <span class="user-badge">{{ currentUser }}</span>
+                    <a href="/profile" class="user-badge user-badge-link">{{ currentUser }}</a>
                     <button class="btn btn-ghost btn-sm" @click="handleLogout">退出</button>
                 </div>
                 <div class="header-auth" v-else>
@@ -424,10 +424,7 @@ const StatsGrid = {
         <div class="stat-card"><div class="stat-content"><span class="stat-label">检测目标数</span><span class="stat-number">{{ totalCount }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">整体风险</span><span class="stat-number" :class="riskClass">{{ overallRisk }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">推理耗时</span><span class="stat-number">{{ inferenceTime }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">最高风险分</span><span class="stat-number">{{ maxRiskScore || 0 }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理模式</span><span class="stat-number stat-text">{{ inferenceMode || '-' }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">输入尺寸</span><span class="stat-number">{{ inferenceSize || '-' }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">高精度补检</span><span class="stat-number stat-text">{{ refined ? '已触发' : '未触发' }}</span></div></div>
+
         <div class="stat-card stat-card-wide">
             <div class="stat-content">
                 <span class="stat-label">风险统计</span>
@@ -454,6 +451,7 @@ const StatsGrid = {
 
 const RiskAnalysisPanel = {
     props: { detections: Array },
+
     data() {
         return { historyItems: [], expandedItems: {} }
     },
@@ -490,6 +488,61 @@ const RiskAnalysisPanel = {
         isItemExpanded(idx) {
             return !!this.expandedItems[idx]
         },
+        exportItemReport(item) {
+            const dets = item.detections || []
+            const riskRows = dets.map((d, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>${d.class_name_cn || d.class_name || '-'}</td>
+                    <td>${((d.confidence || 0) * 100).toFixed(1)}%</td>
+                    <td>${d.risk?.level || d.risk_level || '-'}</td>
+                    <td>${d.risk?.score || d.risk_score || 0}</td>
+                    <td>${d.risk?.reason || d.risk_reason || '-'}</td>
+                </tr>
+            `).join('')
+            const riskMap = { high: '高风险', medium: '中风险', info: '交通提示', low: '低风险' }
+            const overallRisk = riskMap[item.max_risk_level] || '低风险'
+            const html = `
+                <!doctype html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="utf-8">
+                    <title>检测报告 - ${item.original_filename || item.filename || ''}</title>
+                    <style>
+                        body { font-family: Arial, "Microsoft YaHei", sans-serif; padding: 32px; color: #111827; }
+                        h1 { margin-bottom: 4px; }
+                        .meta, li { line-height: 1.7; }
+                        .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+                        .card { border: 1px solid #d1d5db; padding: 14px; border-radius: 8px; }
+                        .card span { display: block; color: #6b7280; font-size: 12px; }
+                        .card strong { font-size: 22px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+                        th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 13px; }
+                        th { background: #f3f4f6; }
+                    </style>
+                </head>
+                <body>
+                    <h1>自动驾驶场景风险检测报告</h1>
+                    <div class="meta">文件：${item.original_filename || item.filename || '-'}</div>
+                    <div class="meta">检测时间：${this.formatTime(item.created_at)}</div>
+                    <div class="cards">
+                        <div class="card"><span>检测目标</span><strong>${item.count || item.total_objects || 0}</strong></div>
+                        <div class="card"><span>整体风险</span><strong>${overallRisk}</strong></div>
+                        <div class="card"><span>置信度</span><strong>${item.confidence != null ? item.confidence.toFixed(2) : '-'}</strong></div>
+                        <div class="card"><span>推理耗时</span><strong>${item.inference_time_ms || '-'} ms</strong></div>
+                    </div>
+                    <h2>目标明细</h2>
+                    <table>
+                        <thead><tr><th>#</th><th>类别</th><th>置信度</th><th>风险等级</th><th>风险分</th><th>原因</th></tr></thead>
+                        <tbody>${riskRows || '<tr><td colspan="6">暂无目标</td></tr>'}</tbody>
+                    </table>
+                </body>
+                </html>
+            `
+            const w = window.open('', '_blank')
+            w.document.write(html)
+            w.document.close()
+        },
     },
     template: `
     <section class="analysis-panel">
@@ -507,6 +560,7 @@ const RiskAnalysisPanel = {
                         <span v-else class="risk-badge risk-low">低风险</span>
                     </span>
                     <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '▾' : '▸' }}</span>
+                    <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click.stop="exportItemReport(item)">生成报告</button>
                 </div>
                 <div v-show="isItemExpanded(idx)" class="risk-time-body">
                     <div class="analysis-list">
@@ -845,7 +899,7 @@ const HistoryPanel = {
                             </div>
                         </div>
                         <div class="ph-thumb ph-thumb-clickable ph-thumb-video" v-else-if="isVideo(item) && item.result_video" @click="viewMedia(item)">
-                            <video :src="item.result_video" muted preload="metadata"></video>
+                            <video :src="item.result_video + '#t=0.5'" muted preload="metadata"></video>
                             <div class="ph-play-icon">▶</div>
                             <div class="ph-thumb-overlay">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
