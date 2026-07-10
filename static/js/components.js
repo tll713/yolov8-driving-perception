@@ -46,7 +46,7 @@ const AppHeader = {
                     <span class="status-text">{{ statusText }}</span>
                 </div>
                 <div class="header-auth" v-if="currentUser">
-                    <span class="user-badge">{{ currentUser }}</span>
+                    <a href="/profile" class="user-badge user-badge-link">{{ currentUser }}</a>
                     <button class="btn btn-ghost btn-sm" @click="handleLogout">退出</button>
                 </div>
                 <div class="header-auth" v-else>
@@ -134,7 +134,8 @@ const DisplayArea = {
         showBadge: Boolean,
         resultVideoUrl: String,
         resultImageUrl: String,
-        laneAnalysis: Object
+        laneAnalysis: Object,
+        maxRiskLevel: String
     },
     setup(props) {
         const videoRef = ref(null)
@@ -142,6 +143,15 @@ const DisplayArea = {
         const videoOverlayFrameId = ref(null)
         const currentLane = ref(null)
         const currentFrameDetections = ref([])
+
+        const riskBorderClass = Vue.computed(() => {
+            const level = props.maxRiskLevel || ''
+            if (level === 'high') return 'risk-border-high'
+            if (level === 'medium') return 'risk-border-medium'
+            if (level === 'info') return 'risk-border-info'
+            if (level === 'low') return 'risk-border-low'
+            return ''
+        })
 
         watch(() => [props.detectionTimeline, props.resultVideoUrl, props.filePreviewUrl], () => {
             if (props.fileType && props.fileType.startsWith('video/')) {
@@ -285,12 +295,13 @@ const DisplayArea = {
             stopVideoOverlayLoop,
             downloadResult,
             hasHighRisk,
-            displayLane
+            displayLane,
+            riskBorderClass
         }
     },
     template: `
     <section class="display-area">
-        <div class="panel panel-highlight">
+        <div class="panel panel-highlight" :class="riskBorderClass">
             <div class="panel-header">
                 <span class="panel-dot dot-accent"></span>
                 <h3>检测结果</h3>
@@ -413,10 +424,7 @@ const StatsGrid = {
         <div class="stat-card"><div class="stat-content"><span class="stat-label">检测目标数</span><span class="stat-number">{{ totalCount }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">整体风险</span><span class="stat-number" :class="riskClass">{{ overallRisk }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">推理耗时</span><span class="stat-number">{{ inferenceTime }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">最高风险分</span><span class="stat-number">{{ maxRiskScore || 0 }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理模式</span><span class="stat-number stat-text">{{ inferenceMode || '-' }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">输入尺寸</span><span class="stat-number">{{ inferenceSize || '-' }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">高精度补检</span><span class="stat-number stat-text">{{ refined ? '已触发' : '未触发' }}</span></div></div>
+
         <div class="stat-card stat-card-wide">
             <div class="stat-content">
                 <span class="stat-label">风险统计</span>
@@ -443,8 +451,9 @@ const StatsGrid = {
 
 const RiskAnalysisPanel = {
     props: { detections: Array },
+
     data() {
-        return { historyItems: [], expandedGroups: {}, expandedSeconds: {} }
+        return { historyItems: [], expandedItems: {} }
     },
     async mounted() {
         await this.loadHistory()
@@ -467,105 +476,113 @@ const RiskAnalysisPanel = {
                 }
             } catch { this.historyItems = [] }
         },
-        groupedBy10s() {
-            const groups = {}
-            this.historyItems.forEach(item => {
-                const ts = item.created_at || ''
-                const d = new Date(ts)
-                if (isNaN(d.getTime())) return
-                const sec = d.getSeconds()
-                const bucket = Math.floor(sec / 10) * 10
-                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(bucket).padStart(2,'0')}`
-                if (!groups[key]) groups[key] = { time: ts, label: key, items: [], totalTargets: 0, riskCounts: { high: 0, medium: 0, info: 0, low: 0 } }
-                groups[key].items.push(item)
-                groups[key].totalTargets += item.count || item.total_objects || 0
-                const rl = item.max_risk_level || 'low'
-                if (groups[key].riskCounts[rl] !== undefined) groups[key].riskCounts[rl]++
-            })
-            return Object.values(groups).sort((a, b) => b.time.localeCompare(a.time))
+        formatTime(iso) {
+            if (!iso) return ''
+            const d = new Date(iso)
+            const pad = n => String(n).padStart(2, '0')
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
         },
-        groupedBySecond(items) {
-            const groups = {}
-            items.forEach(item => {
-                const ts = item.created_at || ''
-                const d = new Date(ts)
-                if (isNaN(d.getTime())) return
-                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
-                if (!groups[key]) groups[key] = { time: ts, label: key, items: [], totalTargets: 0, riskCounts: { high: 0, medium: 0, info: 0, low: 0 } }
-                groups[key].items.push(item)
-                groups[key].totalTargets += item.count || item.total_objects || 0
-                const rl = item.max_risk_level || 'low'
-                if (groups[key].riskCounts[rl] !== undefined) groups[key].riskCounts[rl]++
-            })
-            return Object.values(groups).sort((a, b) => b.time.localeCompare(a.time))
+        toggleItem(idx) {
+            this.expandedItems[idx] = !this.expandedItems[idx]
         },
-        toggleGroup(key) {
-            this.expandedGroups[key] = !this.expandedGroups[key]
+        isItemExpanded(idx) {
+            return !!this.expandedItems[idx]
         },
-        isExpanded(key) {
-            return !!this.expandedGroups[key]
-        },
-        toggleSecond(key) {
-            this.expandedSeconds[key] = !this.expandedSeconds[key]
-        },
-        isSecondExpanded(key) {
-            return !!this.expandedSeconds[key]
+        exportItemReport(item) {
+            const dets = item.detections || []
+            const riskRows = dets.map((d, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>${d.class_name_cn || d.class_name || '-'}</td>
+                    <td>${((d.confidence || 0) * 100).toFixed(1)}%</td>
+                    <td>${d.risk?.level || d.risk_level || '-'}</td>
+                    <td>${d.risk?.score || d.risk_score || 0}</td>
+                    <td>${d.risk?.reason || d.risk_reason || '-'}</td>
+                </tr>
+            `).join('')
+            const riskMap = { high: '高风险', medium: '中风险', info: '交通提示', low: '低风险' }
+            const overallRisk = riskMap[item.max_risk_level] || '低风险'
+            const html = `
+                <!doctype html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="utf-8">
+                    <title>检测报告 - ${item.original_filename || item.filename || ''}</title>
+                    <style>
+                        body { font-family: Arial, "Microsoft YaHei", sans-serif; padding: 32px; color: #111827; }
+                        h1 { margin-bottom: 4px; }
+                        .meta, li { line-height: 1.7; }
+                        .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+                        .card { border: 1px solid #d1d5db; padding: 14px; border-radius: 8px; }
+                        .card span { display: block; color: #6b7280; font-size: 12px; }
+                        .card strong { font-size: 22px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+                        th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 13px; }
+                        th { background: #f3f4f6; }
+                    </style>
+                </head>
+                <body>
+                    <h1>自动驾驶场景风险检测报告</h1>
+                    <div class="meta">文件：${item.original_filename || item.filename || '-'}</div>
+                    <div class="meta">检测时间：${this.formatTime(item.created_at)}</div>
+                    <div class="cards">
+                        <div class="card"><span>检测目标</span><strong>${item.count || item.total_objects || 0}</strong></div>
+                        <div class="card"><span>整体风险</span><strong>${overallRisk}</strong></div>
+                        <div class="card"><span>置信度</span><strong>${item.confidence != null ? item.confidence.toFixed(2) : '-'}</strong></div>
+                        <div class="card"><span>推理耗时</span><strong>${item.inference_time_ms || '-'} ms</strong></div>
+                    </div>
+                    <h2>目标明细</h2>
+                    <table>
+                        <thead><tr><th>#</th><th>类别</th><th>置信度</th><th>风险等级</th><th>风险分</th><th>原因</th></tr></thead>
+                        <tbody>${riskRows || '<tr><td colspan="6">暂无目标</td></tr>'}</tbody>
+                    </table>
+                </body>
+                </html>
+            `
+            const w = window.open('', '_blank')
+            w.document.write(html)
+            w.document.close()
         },
     },
     template: `
     <section class="analysis-panel">
         <div class="section-header"><h3>目标风险明细</h3><span>{{ historyItems.length }} 条记录</span></div>
-        <div v-if="groupedBy10s().length">
-            <div v-for="group in groupedBy10s()" :key="group.label" class="risk-time-group">
-                <div class="risk-time-header" @click="toggleGroup(group.label)" style="cursor:pointer;">
+        <div v-if="historyItems.length">
+            <div v-for="(item, idx) in historyItems" :key="idx" class="risk-time-group">
+                <div class="risk-time-header" @click="toggleItem(idx)" style="cursor:pointer;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    {{ group.label }}
-                    <span class="risk-time-count">{{ group.items.length }} 条检测 · {{ group.totalTargets }} 个目标</span>
+                    {{ formatTime(item.created_at) }}
+                    <span class="risk-time-count">{{ item.count || item.total_objects || 0 }} 个目标</span>
                     <span class="risk-time-badges">
-                        <span v-if="group.riskCounts.high" class="risk-badge risk-high">高{{ group.riskCounts.high }}</span>
-                        <span v-if="group.riskCounts.medium" class="risk-badge risk-medium">中{{ group.riskCounts.medium }}</span>
-                        <span v-if="group.riskCounts.info" class="risk-badge risk-info">提示{{ group.riskCounts.info }}</span>
-                        <span v-if="group.riskCounts.low" class="risk-badge risk-low">低{{ group.riskCounts.low }}</span>
+                        <span v-if="(item.max_risk_level || 'low') === 'high'" class="risk-badge risk-high">高风险</span>
+                        <span v-else-if="(item.max_risk_level || 'low') === 'medium'" class="risk-badge risk-medium">中风险</span>
+                        <span v-else-if="(item.max_risk_level || 'low') === 'info'" class="risk-badge risk-info">交通提示</span>
+                        <span v-else class="risk-badge risk-low">低风险</span>
                     </span>
-                    <span class="risk-toggle-icon">{{ isExpanded(group.label) ? '▾' : '▸' }}</span>
+                    <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '▾' : '▸' }}</span>
+                    <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click.stop="exportItemReport(item)">生成报告</button>
                 </div>
-                <div v-show="isExpanded(group.label)" class="risk-time-body">
-                    <div v-for="secGroup in groupedBySecond(group.items)" :key="secGroup.label" class="risk-sec-group">
-                        <div class="risk-sec-header" @click="toggleSecond(secGroup.label)" style="cursor:pointer;">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 6 12 12 16 14"/></svg>
-                            {{ secGroup.label }}
-                            <span class="risk-time-count">{{ secGroup.items.length }} 条 · {{ secGroup.totalTargets }} 个目标</span>
-                            <span class="risk-time-badges">
-                                <span v-if="secGroup.riskCounts.high" class="risk-badge risk-high">高{{ secGroup.riskCounts.high }}</span>
-                                <span v-if="secGroup.riskCounts.medium" class="risk-badge risk-medium">中{{ secGroup.riskCounts.medium }}</span>
-                                <span v-if="secGroup.riskCounts.info" class="risk-badge risk-info">提示{{ secGroup.riskCounts.info }}</span>
-                                <span v-if="secGroup.riskCounts.low" class="risk-badge risk-low">低{{ secGroup.riskCounts.low }}</span>
-                            </span>
-                            <span class="risk-toggle-icon">{{ isSecondExpanded(secGroup.label) ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-show="isSecondExpanded(secGroup.label)" class="risk-sec-body">
-                            <div class="analysis-list">
-                                <article class="analysis-item" v-for="(item, idx) in secGroup.items" :key="idx">
-                                    <div class="analysis-main">
-                                        <strong>{{ item.original_filename || item.filename || '-' }}</strong>
-                                        <span>{{ item.count || item.total_objects || 0 }} 个目标</span>
-                                        <span :class="riskClass(item.max_risk_level || 'low')">{{ riskLabel(item.max_risk_level || 'low') }}</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span>置信度 {{ item.confidence != null ? item.confidence.toFixed(2) : '-' }}</span>
-                                        <span>耗时 {{ item.inference_time_ms || '-' }} ms</span>
-                                    </div>
-                                    <div v-if="item.detections?.length" class="risk-det-sub">
-                                        <div class="risk-det-item" v-for="(d, di) in item.detections" :key="di">
-                                            <strong>{{ d.class_name_cn || d.class_name }}</strong>
-                                            <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
-                                            <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
-                                            <span class="risk-det-reason">{{ d.risk?.reason || d.risk_reason || '' }}</span>
-                                        </div>
-                                    </div>
-                                </article>
+                <div v-show="isItemExpanded(idx)" class="risk-time-body">
+                    <div class="analysis-list">
+                        <article class="analysis-item">
+                            <div class="analysis-main">
+                                <strong>{{ item.original_filename || item.filename || '-' }}</strong>
+                                <span>{{ item.count || item.total_objects || 0 }} 个目标</span>
+                                <span :class="riskClass(item.max_risk_level || 'low')">{{ riskLabel(item.max_risk_level || 'low') }}</span>
                             </div>
-                        </div>
+                            <div class="metric-row">
+                                <span>置信度 {{ item.confidence != null ? item.confidence.toFixed(2) : '-' }}</span>
+                                <span>耗时 {{ item.inference_time_ms || '-' }} ms</span>
+                            </div>
+                            <div v-if="item.detections?.length" class="risk-det-sub">
+                                <div class="risk-det-item" v-for="(d, di) in item.detections" :key="di">
+                                    <strong>{{ d.class_name_cn || d.class_name }}</strong>
+                                    <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
+                                    <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
+                                    <span class="risk-det-reason">{{ d.risk?.reason || d.risk_reason || '' }}</span>
+                                </div>
+                            </div>
+                        </article>
                     </div>
                 </div>
             </div>
@@ -804,7 +821,7 @@ const HistoryPanel = {
     props: { history: Array },
     emits: ['downloadLog', 'clearHistory'],
     data() {
-        return { allItems: [] }
+        return { allItems: [], viewItem: null }
     },
     async mounted() {
         await this.loadFullHistory()
@@ -825,7 +842,7 @@ const HistoryPanel = {
             if (!iso) return ''
             const d = new Date(iso)
             const pad = n => String(n).padStart(2, '0')
-            return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
         },
         overallRisk(item) {
             return item.max_risk_level || 'low'
@@ -841,6 +858,20 @@ const HistoryPanel = {
             if (this.isVideo(item) && item.result_video) return item.result_video
             return ''
         },
+        viewMedia(item) {
+            if (this.mediaUrl(item)) this.viewItem = item
+        },
+        closeView() {
+            this.viewItem = null
+        },
+        downloadMedia(item) {
+            const url = this.mediaUrl(item)
+            if (!url) return
+            const link = document.createElement('a')
+            link.download = this.isImage(item) ? 'detection_result.png' : 'detection_result.mp4'
+            link.href = url
+            link.click()
+        },
     },
     template: `
     <section class="ph-wrap">
@@ -850,7 +881,7 @@ const HistoryPanel = {
                 检测记录
                 <span v-if="allItems.length" class="history-badge">{{ allItems.length }}</span>
             </h3>
-            <button class="btn btn-ghost btn-sm" @click="$emit('downloadLog')">导出</button>
+
         </div>
         <div v-if="allItems.length" class="ph-timeline">
             <div v-for="(item, i) in allItems" :key="i" class="ph-row">
@@ -861,12 +892,18 @@ const HistoryPanel = {
                 <div class="ph-right">
                     <div class="ph-time">{{ formatTime(item.created_at) }}</div>
                     <div class="ph-card">
-                        <div class="ph-thumb" v-if="isImage(item) && item.result_filename">
+                        <div class="ph-thumb ph-thumb-clickable" v-if="isImage(item) && item.result_filename" @click="viewMedia(item)">
                             <img :src="'/results/' + item.result_filename" alt="">
+                            <div class="ph-thumb-overlay">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            </div>
                         </div>
-                        <div class="ph-thumb ph-thumb-video" v-else-if="isVideo(item) && item.result_video">
-                            <video :src="item.result_video" muted preload="metadata"></video>
+                        <div class="ph-thumb ph-thumb-clickable ph-thumb-video" v-else-if="isVideo(item) && item.result_video" @click="viewMedia(item)">
+                            <video :src="item.result_video + '#t=0.5'" muted preload="metadata"></video>
                             <div class="ph-play-icon">▶</div>
+                            <div class="ph-thumb-overlay">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            </div>
                         </div>
                         <div class="ph-thumb ph-thumb-empty" v-else>
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -875,12 +912,32 @@ const HistoryPanel = {
                             <span class="ph-filename">{{ item.original_filename || item.filename || '-' }}</span>
                             <span class="ph-counts">{{ item.count || item.total_objects || 0 }} 个目标</span>
                             <span :class="riskClass(overallRisk(item))">{{ riskLabel(overallRisk(item)) }}</span>
+                            <div class="ph-actions" v-if="mediaUrl(item)">
+                                <button class="btn btn-ghost btn-sm" @click="viewMedia(item)">查看</button>
+                                <button class="btn btn-ghost btn-sm" @click="downloadMedia(item)">下载</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
         <div v-else class="empty-block">暂无记录</div>
+
+        <div v-if="viewItem" class="ph-modal" @click.self="closeView">
+            <div class="ph-modal-content">
+                <div class="ph-modal-header">
+                    <span>{{ viewItem.original_filename || viewItem.filename || '检测结果' }}</span>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-ghost btn-sm" @click="downloadMedia(viewItem)">下载</button>
+                        <button class="btn btn-ghost btn-sm" @click="closeView">关闭</button>
+                    </div>
+                </div>
+                <div class="ph-modal-body">
+                    <img v-if="isImage(viewItem) && viewItem.result_filename" :src="'/results/' + viewItem.result_filename" class="ph-modal-media" alt="">
+                    <video v-else-if="isVideo(viewItem) && viewItem.result_video" :src="viewItem.result_video" controls class="ph-modal-media"></video>
+                </div>
+            </div>
+        </div>
     </section>
     `
 }

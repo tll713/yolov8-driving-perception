@@ -28,6 +28,7 @@ const app = createApp({
         const simulationDuration = ref(5)
         const simulationResult = ref(null)
         const isSimulating = ref(false)
+        const maxRiskLevel = ref('')
         const currentUser = ref(localStorage.getItem('currentUser') || '')
         const detectionRequestId = ref(0)
         const pollTimerId = ref(null)
@@ -310,6 +311,7 @@ const app = createApp({
             confidence.value = data.confidence ?? null
 
             const overallRisk = data.max_risk_level || computeOverallRisk(detList)
+            maxRiskLevel.value = overallRisk
             const riskInfo = window.RISK_STYLE_MAP[overallRisk] || window.RISK_STYLE_MAP.low
             stats.overallRisk = riskInfo.label
             stats.riskClass = riskInfo.cls
@@ -510,7 +512,7 @@ const app = createApp({
         return {
             activeTab,
             currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl, resultImageUrl,
-            isDetecting, showBadge, confidence,
+            isDetecting, showBadge, confidence, maxRiskLevel,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
             sceneSummary, laneAnalysis, decisionTrace, demoScript, currentUser,
             simulationPresets, simulationScenario, simulationSpeed, simulationDuration,
