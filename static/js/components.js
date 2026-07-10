@@ -559,7 +559,7 @@ const RiskAnalysisPanel = {
                         <span v-else-if="(item.max_risk_level || 'low') === 'info'" class="risk-badge risk-info">交通提示</span>
                         <span v-else class="risk-badge risk-low">低风险</span>
                     </span>
-                    <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '▾' : '▸' }}</span>
+                    <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '?' : '?' }}</span>
                     <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click.stop="exportItemReport(item)">生成报告</button>
                 </div>
                 <div v-show="isItemExpanded(idx)" class="risk-time-body">
@@ -670,86 +670,1288 @@ const SceneInsightPanel = {
 const SimulationPanel = {
     props: {
         presets: Array,
+        customScenarios: Array,
+        weatherOptions: Array,
         scenario: String,
+        weather: String,
         speed: Number,
         duration: Number,
         result: Object,
+        comparisonResult: Object,
         isSimulating: Boolean,
+        isComparing: Boolean,
     },
-    emits: ['scenarioChange', 'speedChange', 'durationChange', 'run'],
+    emits: [
+        'scenarioChange', 'weatherChange', 'speedChange', 'durationChange',
+        'run', 'compare', 'saveScenario', 'deleteScenario',
+    ],
+    data() {
+        return {
+            frameIndex: 0,
+            isPlaying: false,
+            playbackTimer: null,
+            playbackRate: 1,
+            assetStatus: 'loading',
+            showScenarioEditor: false,
+            scenarioEditorError: '',
+            scenarioDraft: {
+                id: '',
+                name: '',
+                description: '',
+                weather: 'clear',
+                ego_speed_kmh: 35,
+                duration_sec: 5,
+                targetsJson: '[\n  {\n    "id": "car-1",\n    "class_name": "car",\n    "distance_m": 30,\n    "lateral_m": 0,\n    "longitudinal_speed_mps": 8\n  }\n]',
+                eventsJson: '[]',
+            },
+        }
+    },
+    watch: {
+        result(value) {
+            this.stopPlayback()
+            this.frameIndex = 0
+            if (value?.timeline?.length) {
+                this.$nextTick(() => {
+                    if (!this.threeRenderer) this.initThreeScene()
+                    this.configureThreeEnvironment()
+                    this.configureThreeScenario()
+                    this.resetThreeTargets()
+                    this.syncThreeFrame()
+                    this.startPlayback()
+                })
+            }
+        },
+        frameIndex() { this.syncThreeFrame() },
+    },
+    beforeUnmount() {
+        this.stopPlayback()
+        this.disposeThreeScene()
+    },
     methods: {
         riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
-        currentFrame() {
-            const timeline = this.result?.timeline || []
-            if (!timeline.length) return null
-            return timeline.reduce((best, item) => item.max_risk_score > best.max_risk_score ? item : best, timeline[0])
+        riskLabel(level) { return RISK_STYLE_MAP[level]?.label || '低风险' },
+        formatTtc(value) { return value == null ? '--' : Number(value).toFixed(1) + 's' },
+        targetClass(target) { return 'target-' + String(target.class_name || 'car').replaceAll(' ', '_') },
+        setPlaybackRate(rate) {
+            const wasPlaying = this.isPlaying
+            this.stopPlayback()
+            this.playbackRate = rate
+            if (wasPlaying) this.startPlayback()
+        },
+        openScenarioEditor() {
+            const existing = (this.customScenarios || []).find(item => item.key === this.scenario)
+            this.scenarioDraft = existing ? {
+                id: existing.id,
+                name: existing.name,
+                description: existing.description || '',
+                weather: existing.weather || 'clear',
+                ego_speed_kmh: Number(existing.ego_speed_kmh || 35),
+                duration_sec: Number(existing.duration_sec || 5),
+                targetsJson: JSON.stringify(existing.targets || [], null, 2),
+                eventsJson: JSON.stringify(existing.events || [], null, 2),
+            } : {
+                id: '',
+                name: '',
+                description: '',
+                weather: this.weather || 'clear',
+                ego_speed_kmh: Number(this.speed || 35),
+                duration_sec: Number(this.duration || 5),
+                targetsJson: '[\n  {\n    "id": "car-1",\n    "class_name": "car",\n    "distance_m": 30,\n    "lateral_m": 0,\n    "longitudinal_speed_mps": 8\n  }\n]',
+                eventsJson: '[]',
+            }
+            this.scenarioEditorError = ''
+            this.showScenarioEditor = true
+        },
+        submitScenario() {
+            try {
+                const targets = JSON.parse(this.scenarioDraft.targetsJson)
+                const events = JSON.parse(this.scenarioDraft.eventsJson)
+                if (!Array.isArray(targets) || !Array.isArray(events)) throw new Error('目标和事件必须是 JSON 数组')
+                this.$emit('saveScenario', {
+                    id: this.scenarioDraft.id || undefined,
+                    name: this.scenarioDraft.name,
+                    description: this.scenarioDraft.description,
+                    weather: this.scenarioDraft.weather,
+                    ego_speed_kmh: Number(this.scenarioDraft.ego_speed_kmh),
+                    duration_sec: Number(this.scenarioDraft.duration_sec),
+                    step_sec: 0.25,
+                    targets,
+                    events,
+                })
+                this.scenarioEditorError = ''
+                this.showScenarioEditor = false
+            } catch (error) {
+                this.scenarioEditorError = error.message || '场景 JSON 格式错误'
+            }
+        },
+        deleteDraftScenario() {
+            if (!this.scenarioDraft.id) return
+            this.$emit('deleteScenario', this.scenarioDraft.id)
+            this.showScenarioEditor = false
+        },
+        comparisonChartPoints(result) {
+            const timeline = result?.timeline || []
+            if (!timeline.length) return ''
+            const last = Math.max(1, timeline.length - 1)
+            return timeline.map((item, index) => {
+                const x = 8 + index / last * 284
+                const y = 92 - item.max_risk_score * 0.78
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+            }).join(' ')
+        },
+        startPlayback() {
+            if (!this.timeline.length || this.isPlaying) return
+            if (this.frameIndex >= this.timeline.length - 1) this.frameIndex = 0
+            this.isPlaying = true
+            const interval = Math.max(80, (this.result.step_sec * 1000) / this.playbackRate)
+            this.playbackTimer = setInterval(() => {
+                if (this.frameIndex >= this.timeline.length - 1) return this.stopPlayback()
+                this.frameIndex += 1
+            }, interval)
+        },
+        stopPlayback() {
+            if (this.playbackTimer) clearInterval(this.playbackTimer)
+            this.playbackTimer = null
+            this.isPlaying = false
+        },
+        togglePlayback() { this.isPlaying ? this.stopPlayback() : this.startPlayback() },
+        restartPlayback() {
+            this.stopPlayback()
+            this.frameIndex = 0
+            this.startPlayback()
+        },
+        seekPlayback(value) {
+            this.stopPlayback()
+            this.frameIndex = Number(value)
+        },
+        initThreeScene() {
+            const THREE = window.THREE
+            const canvas = this.$refs.simCanvas
+            if (!THREE || !canvas || this.threeRenderer) return
+
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false })
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+            renderer.outputEncoding = THREE.sRGBEncoding
+            renderer.toneMapping = THREE.ACESFilmicToneMapping
+            renderer.toneMappingExposure = 1.05
+            renderer.shadowMap.enabled = true
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+            const scene = new THREE.Scene()
+            const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 220)
+            camera.position.set(0, 3.0, 6.6)
+            camera.lookAt(0, 1.08, -36)
+
+            const hemiLight = new THREE.HemisphereLight(0xc7e2ef, 0x35402d, 2.25)
+            const sunLight = new THREE.DirectionalLight(0xfff3d6, 3.2)
+            sunLight.position.set(-18, 28, 12)
+            sunLight.castShadow = true
+            sunLight.shadow.mapSize.set(2048, 2048)
+            sunLight.shadow.camera.left = -36
+            sunLight.shadow.camera.right = 36
+            sunLight.shadow.camera.top = 42
+            sunLight.shadow.camera.bottom = -18
+            scene.add(hemiLight, sunLight)
+
+            const headlightTarget = new THREE.Object3D()
+            headlightTarget.position.set(0, 0.2, -42)
+            scene.add(headlightTarget)
+            const headlights = [-1.1, 1.1].map(x => {
+                const light = new THREE.SpotLight(0xd9f3ff, 0.5, 95, 0.3, 0.58, 1.2)
+                light.position.set(x, 2.1, 5.4)
+                light.target = headlightTarget
+                scene.add(light)
+                return light
+            })
+
+            const skyMaterial = new THREE.ShaderMaterial({
+                side: THREE.BackSide,
+                depthWrite: false,
+                uniforms: {
+                    topColor: { value: new THREE.Color(0x4f8cb2) },
+                    bottomColor: { value: new THREE.Color(0xd3e2e6) },
+                },
+                vertexShader: 'varying vec3 vPosition; void main(){ vPosition = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+                fragmentShader: 'varying vec3 vPosition; uniform vec3 topColor; uniform vec3 bottomColor; void main(){ float h = clamp(normalize(vPosition).y * 0.75 + 0.35, 0.0, 1.0); gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0); }',
+            })
+            const sky = new THREE.Mesh(new THREE.SphereGeometry(190, 32, 18), skyMaterial)
+            scene.add(sky)
+
+            const asphaltData = new Uint8Array(64 * 64 * 3)
+            for (let index = 0; index < asphaltData.length; index += 3) {
+                const shade = 35 + Math.floor(Math.random() * 22)
+                asphaltData[index] = shade
+                asphaltData[index + 1] = shade + 3
+                asphaltData[index + 2] = shade + 4
+            }
+            const asphaltTexture = new THREE.DataTexture(asphaltData, 64, 64, THREE.RGBFormat)
+            asphaltTexture.wrapS = asphaltTexture.wrapT = THREE.RepeatWrapping
+            asphaltTexture.repeat.set(3, 42)
+            asphaltTexture.needsUpdate = true
+
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(140, 220),
+                new THREE.MeshStandardMaterial({ color: 0x38513d, roughness: 1 })
+            )
+            ground.rotation.x = -Math.PI / 2
+            ground.position.z = -88
+            scene.add(ground)
+
+            const road = new THREE.Mesh(
+                new THREE.PlaneGeometry(18, 190),
+                new THREE.MeshStandardMaterial({ color: 0x5d6263, map: asphaltTexture, roughness: 0.94, metalness: 0.02 })
+            )
+            road.rotation.x = -Math.PI / 2
+            road.position.set(0, 0.012, -84)
+            road.receiveShadow = true
+            scene.add(road)
+            this.threeRoadMaterial = road.material
+
+            const roadMarkMaterial = new THREE.MeshStandardMaterial({ color: 0xe7e4d2, roughness: 0.9, metalness: 0.0 })
+            const wornMarkMaterial = new THREE.MeshStandardMaterial({ color: 0xcac7b6, roughness: 1, transparent: true, opacity: 0.72 })
+            const patchMaterial = new THREE.MeshStandardMaterial({ color: 0x272b2e, roughness: 0.96 })
+            const createRoadArrow = (x, z, rotation = 0) => {
+                const shape = new THREE.Shape()
+                shape.moveTo(0, 1.62)
+                shape.lineTo(0.48, 0.62)
+                shape.lineTo(0.2, 0.62)
+                shape.lineTo(0.2, -1.38)
+                shape.lineTo(-0.2, -1.38)
+                shape.lineTo(-0.2, 0.62)
+                shape.lineTo(-0.48, 0.62)
+                shape.closePath()
+                const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), roadMarkMaterial)
+                arrow.rotation.set(-Math.PI / 2, 0, rotation)
+                arrow.position.set(x, 0.071, z)
+                arrow.receiveShadow = true
+                return arrow
+            }
+            const trafficProps = []
+            for (const z of [-20, -64, -108, -152]) {
+                for (const x of [-5.2, 0, 5.2]) {
+                    const arrow = createRoadArrow(x, z, 0)
+                    trafficProps.push(arrow)
+                    scene.add(arrow)
+                }
+            }
+            for (let index = 0; index < 11; index += 1) {
+                const patch = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.2 + (index % 3) * 0.5, 0.025, 2.6 + (index % 2) * 1.2),
+                    patchMaterial
+                )
+                patch.position.set((index % 2 ? -1 : 1) * (1.1 + index % 4), 0.062, -12 - index * 14)
+                patch.rotation.y = (index % 3 - 1) * 0.08
+                trafficProps.push(patch)
+                scene.add(patch)
+            }
+            for (const item of [
+                { x: -0.75, z: -34, angle: -0.06 },
+                { x: 0.86, z: -35, angle: 0.04 },
+                { x: -0.55, z: -92, angle: -0.05 },
+                { x: 0.62, z: -93, angle: 0.03 },
+            ]) {
+                const skid = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.022, 8.4), wornMarkMaterial)
+                skid.position.set(item.x, 0.073, item.z)
+                skid.rotation.y = item.angle
+                trafficProps.push(skid)
+                scene.add(skid)
+            }
+
+            const shoulderMaterial = new THREE.MeshStandardMaterial({ color: 0x2f3739, roughness: 0.98 })
+            for (const x of [-11.3, 11.3]) {
+                const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 190), shoulderMaterial)
+                shoulder.rotation.x = -Math.PI / 2
+                shoulder.position.set(x, 0.018, -84)
+                shoulder.receiveShadow = true
+                scene.add(shoulder)
+            }
+
+            const markerGeometry = new THREE.BoxGeometry(0.13, 0.025, 3.4)
+            const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xf2edcf, emissive: 0x312e21 })
+            const laneMarkers = []
+            for (const x of [-3, 3]) {
+                for (let index = 0; index < 24; index += 1) {
+                    const marker = new THREE.Mesh(markerGeometry, markerMaterial)
+                    marker.position.set(x, 0.04, 8 - index * 7.5)
+                    laneMarkers.push(marker)
+                    scene.add(marker)
+                }
+            }
+            const edgeGeometry = new THREE.BoxGeometry(0.18, 0.035, 190)
+            const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xe9d88c })
+            for (const x of [-8.2, 8.2]) {
+                const edge = new THREE.Mesh(edgeGeometry, edgeMaterial)
+                edge.position.set(x, 0.045, -84)
+                scene.add(edge)
+            }
+
+            const roadsideDetails = []
+            const rumbleGeometry = new THREE.BoxGeometry(0.55, 0.035, 0.16)
+            const rumbleMaterial = new THREE.MeshStandardMaterial({ color: 0xd9d0a0, roughness: 0.82 })
+            for (const x of [-8.9, 8.9]) {
+                for (let index = 0; index < 54; index += 1) {
+                    const strip = new THREE.Mesh(rumbleGeometry, rumbleMaterial)
+                    strip.position.set(x, 0.068, 9 - index * 3.3)
+                    roadsideDetails.push(strip)
+                    scene.add(strip)
+                }
+            }
+
+            const railMaterial = new THREE.MeshStandardMaterial({ color: 0xaeb5b8, roughness: 0.48, metalness: 0.35 })
+            const postMaterial = new THREE.MeshStandardMaterial({ color: 0x4b555a, roughness: 0.7 })
+            const reflectorMaterial = new THREE.MeshStandardMaterial({ color: 0xffe29a, emissive: 0xffb02e, emissiveIntensity: 0.9, roughness: 0.45 })
+            const sceneryDetails = []
+            for (const side of [-1, 1]) {
+                for (let index = 0; index < 13; index += 1) {
+                    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 9.2), railMaterial)
+                    rail.position.set(side * 11.0, 0.88, 4 - index * 14)
+                    rail.castShadow = true
+                    roadsideDetails.push(rail)
+                    scene.add(rail)
+                    const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.1, 0.16), postMaterial)
+                    post.position.set(side * 11.0, 0.54, 0.2 - index * 14)
+                    post.castShadow = true
+                    sceneryDetails.push(post)
+                    scene.add(post)
+                    const reflector = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.28), reflectorMaterial)
+                    reflector.position.set(side * 10.9, 0.92, 0.2 - index * 14)
+                    reflector.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2
+                    sceneryDetails.push(reflector)
+                    scene.add(reflector)
+                }
+            }
+
+            const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0x56636a, roughness: 0.88 })
+            const darkBuildingMaterial = new THREE.MeshStandardMaterial({ color: 0x38444b, roughness: 0.9 })
+            const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x7fb0c7, emissive: 0x123040, emissiveIntensity: 0.35, roughness: 0.35 })
+            for (let index = 0; index < 15; index += 1) {
+                const height = 5 + index % 4 * 2.2
+                for (const side of [-1, 1]) {
+                    const building = new THREE.Mesh(
+                        new THREE.BoxGeometry(5 + index % 3, height, 7),
+                        index % 2 ? buildingMaterial : darkBuildingMaterial
+                    )
+                    building.position.set(side * (13 + index % 3 * 2.5), height / 2, -10 - index * 11)
+                    building.castShadow = true
+                    sceneryDetails.push(building)
+                    scene.add(building)
+                    for (let floor = 1; floor < height - 1; floor += 1.8) {
+                        const windowBand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.38, 4.2), windowMaterial)
+                        windowBand.position.set(building.position.x - side * ((5 + index % 3) / 2 + 0.025), floor, building.position.z)
+                        sceneryDetails.push(windowBand)
+                        scene.add(windowBand)
+                    }
+                }
+            }
+
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x60412b, roughness: 0.9 })
+            const crownMaterial = new THREE.MeshStandardMaterial({ color: 0x2f6b45, roughness: 0.96 })
+            for (let index = 0; index < 18; index += 1) {
+                for (const side of [-1, 1]) {
+                    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 1.8, 8), trunkMaterial)
+                    trunk.position.set(side * (15.5 + index % 2 * 2.5), 0.9, -8 - index * 9.4)
+                    trunk.castShadow = true
+                    const crown = new THREE.Mesh(new THREE.ConeGeometry(1.25 + index % 3 * 0.18, 3.2, 10), crownMaterial)
+                    crown.position.set(trunk.position.x, 2.85, trunk.position.z)
+                    crown.castShadow = true
+                    sceneryDetails.push(trunk, crown)
+                    scene.add(trunk, crown)
+                }
+            }
+
+            const signMaterial = new THREE.MeshStandardMaterial({ color: 0x1f7f63, roughness: 0.55, metalness: 0.05 })
+            const signTextMaterial = new THREE.MeshStandardMaterial({ color: 0xdfeee8, emissive: 0x18342c, emissiveIntensity: 0.5 })
+            const signFaceMaterial = new THREE.MeshStandardMaterial({ color: 0xf3f4ec, roughness: 0.55 })
+            const signRedMaterial = new THREE.MeshStandardMaterial({ color: 0xd73535, emissive: 0x5b0b0b, emissiveIntensity: 0.35 })
+            const warningMaterial = new THREE.MeshStandardMaterial({ color: 0xf6c84f, emissive: 0x4b3408, emissiveIntensity: 0.22, roughness: 0.52 })
+            for (let index = 0; index < 4; index += 1) {
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.6, 10), postMaterial)
+                pole.position.set(-10.3, 2.3, -22 - index * 38)
+                const sign = new THREE.Mesh(new THREE.BoxGeometry(2.9, 1.15, 0.08), signMaterial)
+                sign.position.set(-10.3, 4.25, pole.position.z)
+                const mark = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.095), signTextMaterial)
+                mark.position.set(-10.3, 4.28, pole.position.z + 0.055)
+                sceneryDetails.push(pole, sign, mark)
+                scene.add(pole, sign, mark)
+            }
+            for (let index = 0; index < 5; index += 1) {
+                const z = -16 - index * 34
+                const side = index % 2 ? -1 : 1
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 2.6, 10), postMaterial)
+                pole.position.set(side * 9.8, 1.3, z)
+                const face = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.045, 32), signFaceMaterial)
+                face.rotation.x = Math.PI / 2
+                face.position.set(side * 9.8, 2.7, z)
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.53, 0.055, 8, 32), signRedMaterial)
+                ring.rotation.x = Math.PI / 2
+                ring.position.copy(face.position)
+                const markA = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 0.05), signRedMaterial)
+                markA.position.set(side * 9.8, 2.7, z + 0.035)
+                const markB = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.05), signRedMaterial)
+                markB.position.set(side * 9.8, 2.7, z + 0.04)
+                sceneryDetails.push(pole, face, ring, markA, markB)
+                scene.add(pole, face, ring, markA, markB)
+            }
+            for (let index = 0; index < 4; index += 1) {
+                const board = new THREE.Mesh(new THREE.ConeGeometry(0.68, 0.08, 3), warningMaterial)
+                board.rotation.set(Math.PI / 2, 0, Math.PI / 3)
+                board.position.set(-9.6, 2.55, -35 - index * 42)
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 2.25, 8), postMaterial)
+                pole.position.set(-9.6, 1.15, board.position.z)
+                sceneryDetails.push(board, pole)
+                scene.add(board, pole)
+            }
+            const busStopMaterial = new THREE.MeshStandardMaterial({ color: 0x2f78a6, emissive: 0x0d2636, emissiveIntensity: 0.28, roughness: 0.42 })
+            const shelterGlassMaterial = new THREE.MeshStandardMaterial({ color: 0x9fc6d4, transparent: true, opacity: 0.34, roughness: 0.18, metalness: 0.1 })
+            for (const z of [-58, -138]) {
+                const signPole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 2.8, 8), postMaterial)
+                signPole.position.set(12.7, 1.4, z)
+                const stopBoard = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.05, 0.08), busStopMaterial)
+                stopBoard.position.set(12.7, 2.85, z)
+                const shelter = new THREE.Mesh(new THREE.BoxGeometry(2.7, 1.55, 0.08), shelterGlassMaterial)
+                shelter.position.set(14.4, 1.15, z - 1.4)
+                const roof = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.12, 1.35), railMaterial)
+                roof.position.set(14.4, 2.04, z - 1.4)
+                sceneryDetails.push(signPole, stopBoard, shelter, roof)
+                scene.add(signPole, stopBoard, shelter, roof)
+            }
+
+            const streetLights = []
+            const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x2e363b, roughness: 0.75 })
+            const lampMaterial = new THREE.MeshStandardMaterial({ color: 0xfff0ba, emissive: 0xffd66b, emissiveIntensity: 1.4 })
+            for (let index = 0; index < 12; index += 1) {
+                for (const side of [-1, 1]) {
+                    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 5.6, 10), poleMaterial)
+                    pole.position.set(side * 9.4, 2.8, -10 - index * 14)
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.08), poleMaterial)
+                    arm.position.set(side * 8.9, 5.55, pole.position.z)
+                    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), lampMaterial)
+                    bulb.position.set(side * 8.35, 5.48, pole.position.z)
+                    sceneryDetails.push(pole, arm, bulb)
+                    scene.add(pole, arm, bulb)
+                    if (index % 3 === 0) {
+                        const light = new THREE.PointLight(0xffdb91, 0, 18, 1.8)
+                        light.position.copy(bulb.position)
+                        streetLights.push(light)
+                        sceneryDetails.push(light)
+                        scene.add(light)
+                    }
+                }
+            }
+
+            this.threeRenderer = renderer
+            this.threeScene = scene
+            this.threeCamera = camera
+            this.threeHemiLight = hemiLight
+            this.threeSunLight = sunLight
+            this.threeHeadlights = headlights
+            this.threeSkyMaterial = skyMaterial
+            this.threeStreetLights = streetLights
+            this.threeLaneMarkers = laneMarkers
+            this.threeRoadsideDetails = roadsideDetails
+            this.threeSceneryDetails = sceneryDetails
+            this.threeTrafficProps = trafficProps
+            this.threeTargets = new Map()
+            this.threeAmbientCars = []
+            this.threeMixers = []
+            this.threeLastTime = performance.now()
+
+            const resize = () => {
+                const width = Math.max(1, canvas.clientWidth)
+                const height = Math.max(1, canvas.clientHeight)
+                renderer.setSize(width, height, false)
+                camera.aspect = width / height
+                camera.updateProjectionMatrix()
+            }
+            this.threeResizeObserver = new ResizeObserver(resize)
+            this.threeResizeObserver.observe(canvas)
+            resize()
+
+            const animate = now => {
+                const delta = Math.min(0.05, (now - this.threeLastTime) / 1000)
+                this.threeLastTime = now
+                if (this.isPlaying) {
+                    const roadSpeed = (this.frame?.ego_speed_kmh || 0) / 3.6
+                    this.threeLaneMarkers.forEach(marker => {
+                        marker.position.z += roadSpeed * delta
+                        if (marker.position.z > 10) marker.position.z -= 180
+                    })
+                    this.threeRoadsideDetails.forEach(detail => {
+                        detail.position.z += roadSpeed * delta
+                        if (detail.position.z > 12) detail.position.z -= 178
+                    })
+                    this.threeSceneryDetails.forEach(detail => {
+                        detail.position.z += roadSpeed * delta
+                        if (detail.position.z > 14) detail.position.z -= 178
+                    })
+                    this.threeTrafficProps.forEach(detail => {
+                        detail.position.z += roadSpeed * delta
+                        if (detail.position.z > 14) detail.position.z -= 178
+                    })
+                }
+                this.threeTargets.forEach(target => {
+                    let visualY = target.userData.targetY || 0
+                    if (target.userData.isProceduralPerson) {
+                        visualY += Math.abs(Math.sin(now * 0.006)) * 0.012
+                    }
+                    target.position.x += (target.userData.targetX - target.position.x) * 0.12
+                    target.position.y += (visualY - target.position.y) * 0.12
+                    target.position.z += (target.userData.targetZ - target.position.z) * 0.12
+                    if (target.userData.isProceduralPerson) {
+                        const phase = now * 0.006
+                        target.children.forEach(child => {
+                            if (!child.userData.walkPhase) return
+                            const swing = Math.sin(phase + child.userData.walkPhase * Math.PI) * target.userData.walkAmplitude
+                            child.rotation.x = swing
+                        })
+                    }
+                })
+                this.threeMixers.forEach(mixer => mixer.update(delta))
+                if (this.isPlaying) {
+                    const trafficSpeed = ((this.frame?.ego_speed_kmh || 0) / 3.6) * delta * 0.42
+                    this.threeAmbientCars.forEach(car => {
+                        car.position.z += trafficSpeed
+                        if (car.position.z > 8) car.position.z -= 150
+                    })
+                }
+                if (this.threeRain) {
+                    const positions = this.threeRain.geometry.attributes.position
+                    for (let index = 1; index < positions.count * 3; index += 3) {
+                        positions.array[index] -= delta * 18
+                        if (positions.array[index] < 0.2) positions.array[index] = 12
+                        positions.array[index + 1] += delta * 9
+                        if (positions.array[index + 1] > 8) positions.array[index + 1] -= 112
+                    }
+                    positions.needsUpdate = true
+                }
+                camera.position.x = Math.sin(now * 0.0017) * 0.035
+                camera.position.y = 3.0 + Math.sin(now * 0.0024) * 0.018
+                renderer.render(scene, camera)
+                this.threeAnimationFrame = requestAnimationFrame(animate)
+            }
+            this.threeAnimationFrame = requestAnimationFrame(animate)
+            this.loadThreeAssets()
+        },
+        loadThreeAssets() {
+            const THREE = window.THREE
+            if (!THREE?.GLTFLoader) {
+                this.assetStatus = 'fallback'
+                return
+            }
+            const loader = new THREE.GLTFLoader()
+            const dracoLoader = new THREE.DRACOLoader()
+            dracoLoader.setDecoderPath('/static/js/draco/')
+            dracoLoader.setDecoderConfig({ type: 'js' })
+            loader.setDRACOLoader(dracoLoader)
+            this.threeDracoLoader = dracoLoader
+            const load = url => new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject))
+            Promise.all([
+                load('/static/models/simulation/ferrari.glb'),
+                load('/static/models/simulation/soldier.glb'),
+            ]).then(([carGltf, personGltf]) => {
+                const car = this.normalizeThreeAsset(carGltf.scene, { length: 4.5, rotateToRoad: true })
+                const person = this.normalizeThreeAsset(personGltf.scene, { height: 1.82, rotateY: Math.PI })
+                person.userData.animations = personGltf.animations || []
+                this.threeAssetTemplates = { car, person }
+                this.assetStatus = 'ready'
+                this.buildAmbientTraffic()
+                this.resetThreeTargets()
+                this.syncThreeFrame()
+            }).catch(error => {
+                console.warn('3D assets unavailable, using procedural models.', error)
+                this.assetStatus = 'fallback'
+                this.buildAmbientTraffic()
+            })
+        },
+        normalizeThreeAsset(source, options = {}) {
+            const THREE = window.THREE
+            const model = source
+            if (options.rotateY) model.rotation.y = options.rotateY
+            let box = new THREE.Box3().setFromObject(model)
+            let size = box.getSize(new THREE.Vector3())
+            if (options.rotateToRoad && size.x > size.z) {
+                model.rotation.y += Math.PI / 2
+                box = new THREE.Box3().setFromObject(model)
+                size = box.getSize(new THREE.Vector3())
+            }
+            const scale = options.height ? options.height / size.y : options.length / Math.max(size.x, size.z)
+            model.scale.multiplyScalar(scale)
+            box = new THREE.Box3().setFromObject(model)
+            const center = box.getCenter(new THREE.Vector3())
+            model.position.set(-center.x, -box.min.y, -center.z)
+            model.traverse(object => {
+                if (!object.isMesh) return
+                object.castShadow = true
+                object.receiveShadow = true
+            })
+            const wrapper = new THREE.Group()
+            wrapper.add(model)
+            return wrapper
+        },
+        makeAssetCar(color = 0xb73038) {
+            const THREE = window.THREE
+            const car = this.threeAssetTemplates?.car?.clone(true)
+            if (!car) return this.makeThreeVehicle(color)
+            let tinted = false
+            car.traverse(object => {
+                if (!object.isMesh || tinted || !object.material) return
+                object.material = object.material.clone()
+                object.material.color = new THREE.Color(color)
+                object.material.roughness = Math.min(object.material.roughness ?? 0.5, 0.42)
+                tinted = true
+            })
+            return car
+        },
+        buildAmbientTraffic() {
+            if (!this.threeScene) return
+            this.threeAmbientCars.forEach(car => this.threeScene.remove(car))
+            this.threeAmbientCars = []
+            const traffic = [
+                { x: -3.1, z: -42, color: 0x2d566f },
+                { x: 3.15, z: -68, color: 0xd0d3d4 },
+                { x: -3.05, z: -102, color: 0x5f666b },
+                { x: 3.2, z: -132, color: 0xb58a32 },
+            ]
+            traffic.forEach(item => {
+                const car = this.makeAssetCar(item.color)
+                car.position.set(item.x, 0.02, item.z)
+                car.rotation.y = Math.PI
+                car.scale.multiplyScalar(0.92)
+                this.threeAmbientCars.push(car)
+                this.threeScene.add(car)
+            })
+        },
+        makeThreeWheel(radius = 0.36) {
+            const THREE = window.THREE
+            const tireMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 0.95 })
+            const rimMaterial = new THREE.MeshStandardMaterial({ color: 0xc8ced0, roughness: 0.35, metalness: 0.25 })
+            const group = new THREE.Group()
+            const tire = new THREE.Mesh(new THREE.TorusGeometry(radius, radius * 0.11, 12, 28), tireMaterial)
+            tire.rotation.y = Math.PI / 2
+            const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.48, radius * 0.48, 0.04, 16), rimMaterial)
+            rim.rotation.z = Math.PI / 2
+            group.add(tire, rim)
+            return group
+        },
+        makeThreeVehicle(color = 0xb6c0c8) {
+            const THREE = window.THREE
+            const group = new THREE.Group()
+            const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.38, metalness: 0.42 })
+            const glassMaterial = new THREE.MeshStandardMaterial({ color: 0x8fb8c8, roughness: 0.12, metalness: 0.25, transparent: true, opacity: 0.82 })
+            const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x12171b, roughness: 0.72, metalness: 0.2 })
+            const lightMaterial = new THREE.MeshStandardMaterial({ color: 0xf7f0d5, emissive: 0xffe8a6, emissiveIntensity: 1.2 })
+            const tailMaterial = new THREE.MeshStandardMaterial({ color: 0xb81f26, emissive: 0xff1f2d, emissiveIntensity: 0.9 })
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.72, 3.8), bodyMaterial)
+            body.position.y = 0.62
+            body.castShadow = true
+            const hood = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.12, 1.05), bodyMaterial)
+            hood.position.set(0, 1.03, -1.05)
+            hood.castShadow = true
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.7, 1.45), glassMaterial)
+            cabin.position.set(0, 1.27, 0.35)
+            cabin.castShadow = true
+            const grille = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.18, 0.06), trimMaterial)
+            grille.position.set(0, 0.69, -1.93)
+            group.add(body, hood, cabin, grille)
+            for (const x of [-0.55, 0.55]) {
+                const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.13, 0.08), lightMaterial)
+                lamp.position.set(x, 0.83, -1.94)
+                const tail = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.13, 0.08), tailMaterial)
+                tail.position.set(x, 0.82, 1.94)
+                group.add(lamp, tail)
+            }
+            for (const x of [-0.98, 0.98]) {
+                for (const z of [-1.15, 1.15]) {
+                    const wheel = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.33, 0.33, 0.22, 16),
+                        new THREE.MeshStandardMaterial({ color: 0x101214, roughness: 1 })
+                    )
+                    wheel.rotation.z = Math.PI / 2
+                    wheel.position.set(x, 0.36, z)
+                    wheel.castShadow = true
+                    group.add(wheel)
+                }
+            }
+            return group
+        },
+        makeThreePerson(options = {}) {
+            const THREE = window.THREE
+            const group = new THREE.Group()
+            const jacket = options.jacket ?? 0x2f80c2
+            const pants = options.pants ?? 0x26313a
+            const bodyMaterial = new THREE.MeshStandardMaterial({ color: jacket, roughness: 0.78 })
+            const pantsMaterial = new THREE.MeshStandardMaterial({ color: pants, roughness: 0.86 })
+            const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd8a47f, roughness: 0.82 })
+            const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x181b1f, roughness: 0.9 })
+            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.9, 6, 12), bodyMaterial)
+            body.position.y = 1.18
+            body.castShadow = true
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 12), skinMaterial)
+            head.position.y = 1.93
+            head.castShadow = true
+            const backpack = new THREE.Mesh(
+                new THREE.BoxGeometry(0.34, 0.54, 0.16),
+                new THREE.MeshStandardMaterial({ color: 0x39424b, roughness: 0.82 })
+            )
+            backpack.position.set(0, 1.25, -0.23)
+            backpack.castShadow = true
+            group.add(body, head, backpack)
+            for (const side of [-1, 1]) {
+                const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.66, 5, 8), skinMaterial)
+                arm.position.set(side * 0.34, 1.15, 0.04)
+                arm.rotation.z = side * 0.18
+                arm.userData.walkPhase = side
+                arm.castShadow = true
+                const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.72, 5, 8), pantsMaterial)
+                leg.position.set(side * 0.11, 0.48, 0)
+                leg.userData.walkPhase = -side
+                leg.castShadow = true
+                const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.28), shoeMaterial)
+                shoe.position.set(side * 0.11, 0.08, 0.08)
+                shoe.castShadow = true
+                group.add(arm, leg, shoe)
+            }
+            group.userData.isProceduralPerson = true
+            group.userData.walkAmplitude = options.walkAmplitude ?? 0.32
+            return group
+        },
+        makeThreeCyclist() {
+            const THREE = window.THREE
+            const group = new THREE.Group()
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: 0xd8b24a, roughness: 0.46, metalness: 0.25 })
+            for (const z of [-0.72, 0.72]) {
+                const wheel = this.makeThreeWheel(0.34)
+                wheel.position.set(0, 0.42, z)
+                group.add(wheel)
+            }
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 1.35), frameMaterial)
+            frame.position.set(0, 0.74, 0)
+            frame.rotation.x = -0.18
+            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.06, 0.08), frameMaterial)
+            handle.position.set(0, 1.06, -0.64)
+            const rider = this.makeThreePerson({ jacket: 0x62a87c, pants: 0x20272d, walkAmplitude: 0.12 })
+            rider.scale.setScalar(0.72)
+            rider.position.set(0, 0.62, 0.06)
+            rider.rotation.x = -0.18
+            group.add(frame, handle, rider)
+            return group
+        },
+        makeThreeMotorcycle() {
+            const THREE = window.THREE
+            const group = new THREE.Group()
+            const tireMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 0.95 })
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: 0xe0a52b, roughness: 0.42, metalness: 0.35 })
+            for (const z of [-1.15, 1.15]) {
+                const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.11, 12, 24), tireMaterial)
+                wheel.rotation.y = Math.PI / 2
+                wheel.position.set(0, 0.48, z)
+                group.add(wheel)
+            }
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 1.85), frameMaterial)
+            frame.position.y = 0.77
+            frame.rotation.x = -0.08
+            const tank = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 12), frameMaterial)
+            tank.scale.set(0.8, 0.72, 1.15)
+            tank.position.set(0, 1.05, 0.22)
+            const rider = this.makeThreePerson()
+            rider.scale.setScalar(0.78)
+            rider.position.set(0, 0.72, 0.3)
+            rider.rotation.x = -0.18
+            group.add(frame, tank, rider)
+            return group
+        },
+        makeThreeTrafficLight() {
+            const THREE = window.THREE
+            const group = new THREE.Group()
+            const pole = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.09, 0.11, 4.8, 12),
+                new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 })
+            )
+            pole.position.y = 2.4
+            const housing = new THREE.Mesh(
+                new THREE.BoxGeometry(0.8, 1.8, 0.55),
+                new THREE.MeshStandardMaterial({ color: 0x171b1d })
+            )
+            housing.position.y = 4.65
+            const red = new THREE.Mesh(
+                new THREE.SphereGeometry(0.22, 16, 12),
+                new THREE.MeshStandardMaterial({ color: 0xff2d2d, emissive: 0xff0000, emissiveIntensity: 3 })
+            )
+            red.position.set(0, 5.05, 0.3)
+            group.add(pole, housing, red)
+            return group
+        },
+        makeThreeTarget(target) {
+            if (target.class_name === 'person') {
+                return this.makeThreePerson()
+            }
+            if (['traffic light', 'traffic_light'].includes(target.class_name)) return this.makeThreeTrafficLight()
+            if (target.class_name === 'motorcycle' || target.class_name === 'bicycle') return this.makeThreeMotorcycle()
+            return this.makeAssetCar(0xb7c1c8)
+        },
+        resetThreeTargets() {
+            if (!this.threeTargets || !this.threeScene) return
+            this.threeTargets.forEach(target => this.threeScene.remove(target))
+            this.threeTargets.clear()
+            this.threeMixers = []
+        },
+        syncThreeFrame() {
+            if (!this.threeScene || !this.frame) return
+            if (this.threeScenarioProps) {
+                this.threeScenarioProps.position.z = this.frame.ego_travel_distance_m || 0
+            }
+            const activeIds = new Set()
+            this.frame.targets.forEach(target => {
+                activeIds.add(target.id)
+                let model = this.threeTargets.get(target.id)
+                if (!model) {
+                    model = this.makeThreeTarget(target)
+                    const [x, y, z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                    model.position.set(x, y, z)
+                    model.userData.className = target.class_name
+                    this.threeTargets.set(target.id, model)
+                    this.threeScene.add(model)
+                }
+                model.visible = true
+                const [x, y, z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                model.userData.targetX = x
+                model.userData.targetY = y
+                model.userData.targetZ = z
+                model.rotation.y = Number(target.heading_rad || 0)
+            })
+            this.threeTargets.forEach((target, id) => { target.visible = activeIds.has(id) })
+        },
+        configureThreeScenario() {
+            const THREE = window.THREE
+            if (!this.threeScene || !THREE || !this.result) return
+            if (this.threeScenarioProps) this.threeScene.remove(this.threeScenarioProps)
+            const group = new THREE.Group()
+            const firstFrameTargets = this.result.timeline?.[0]?.targets || []
+            const lightTarget = firstFrameTargets.find(target => ['traffic light', 'traffic_light'].includes(target.class_name))
+            const personTarget = firstFrameTargets.find(target => target.class_name === 'person')
+            const initialTarget = lightTarget || personTarget || firstFrameTargets[0]
+            const conflictDistance = this.result.scenario === 'mixed_intersection'
+                ? Math.min(lightTarget?.distance_m || 34, 42)
+                : Math.min(initialTarget?.distance_m || 28, 38) * 1.18 + 4
+            const conflictZ = -conflictDistance
+            const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xe8e6d8, roughness: 0.88 })
+            const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xb6b8ad, roughness: 0.86 })
+            const warningMaterial = new THREE.MeshStandardMaterial({ color: 0xf0782e, emissive: 0x361308 })
+            const asphaltDarkMaterial = new THREE.MeshStandardMaterial({ color: 0x262b2f, roughness: 0.97 })
+            const skidMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 1, transparent: true, opacity: 0.86 })
+
+            if (['pedestrian_crossing', 'red_light', 'mixed_intersection'].includes(this.result.scenario)) {
+                for (let index = 0; index < 9; index += 1) {
+                    const stripe = new THREE.Mesh(new THREE.BoxGeometry(15.8, 0.035, 0.48), whiteMaterial)
+                    stripe.position.set(0, 0.06, conflictZ + (index - 4) * 0.9)
+                    group.add(stripe)
+                }
+                for (const x of [-9.2, 9.2]) {
+                    const waitingCurb = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.18, 5.8), curbMaterial)
+                    waitingCurb.position.set(x, 0.14, conflictZ)
+                    group.add(waitingCurb)
+                    const tactile = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.025, 0.42), whiteMaterial)
+                    tactile.position.set(x, 0.25, conflictZ - 2.2)
+                    group.add(tactile)
+                }
+            }
+            if (this.result.scenario === 'pedestrian_crossing') {
+                const waitingA = this.makeThreePerson({ jacket: 0x6a9f5f, pants: 0x26313a, walkAmplitude: 0.08 })
+                waitingA.position.set(-9.2, 0.18, conflictZ - 1.9)
+                waitingA.rotation.y = Math.PI / 2
+                const waitingB = this.makeThreePerson({ jacket: 0xd1a74b, pants: 0x2b3036, walkAmplitude: 0.08 })
+                waitingB.position.set(9.15, 0.18, conflictZ + 1.8)
+                waitingB.rotation.y = -Math.PI / 2
+                const crossingSign = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.95, 0.08), new THREE.MeshStandardMaterial({ color: 0x2f78c2, emissive: 0x09243d, emissiveIntensity: 0.35 }))
+                crossingSign.position.set(-10.2, 2.95, conflictZ + 3.4)
+                const signPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 2.65, 8), new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 }))
+                signPole.position.set(-10.2, 1.33, conflictZ + 3.4)
+                group.add(waitingA, waitingB, crossingSign, signPole)
+            }
+            if (this.result.scenario === 'red_light' || this.result.scenario === 'mixed_intersection') {
+                const crossingRoad = new THREE.Mesh(
+                    new THREE.PlaneGeometry(74, 17),
+                    asphaltDarkMaterial
+                )
+                crossingRoad.rotation.x = -Math.PI / 2
+                crossingRoad.position.set(0, 0.028, conflictZ - 9)
+                group.add(crossingRoad)
+                const stopLine = new THREE.Mesh(new THREE.BoxGeometry(16, 0.05, 0.65), whiteMaterial)
+                stopLine.position.set(0, 0.07, conflictZ + 5.2)
+                group.add(stopLine)
+                for (const x of [-11.8, 11.8]) {
+                    const pole = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.09, 0.12, 5.4, 12),
+                        new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 })
+                    )
+                    pole.position.set(x, 2.7, conflictZ + 3.2)
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.1, 0.1), pole.material)
+                    arm.position.set(x > 0 ? x - 2.25 : x + 2.25, 5.32, conflictZ + 3.2)
+                    const signal = this.makeThreeTrafficLight()
+                    signal.scale.setScalar(0.58)
+                    signal.position.set(x > 0 ? x - 4.2 : x + 4.2, 1.65, conflictZ + 3.3)
+                    signal.rotation.y = x > 0 ? Math.PI / 2 : -Math.PI / 2
+                    group.add(pole, arm, signal)
+                }
+                for (const x of [-3, 3]) {
+                    const turnArrow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 5.2), whiteMaterial)
+                    turnArrow.position.set(x, 0.075, conflictZ + 12.5)
+                    group.add(turnArrow)
+                }
+                if (this.result.scenario === 'mixed_intersection') {
+                    const queueCar = this.makeThreeVehicle(0xbfc7c9)
+                    queueCar.scale.setScalar(0.86)
+                    queueCar.position.set(-5.2, 0.03, conflictZ - 10)
+                    queueCar.rotation.y = -Math.PI / 2
+                    const cyclist = this.makeThreeCyclist()
+                    cyclist.position.set(7.3, 0.02, conflictZ + 2.4)
+                    cyclist.rotation.y = Math.PI / 2
+                    const scooter = this.makeThreeMotorcycle()
+                    scooter.scale.setScalar(0.72)
+                    scooter.position.set(4.7, 0.03, conflictZ - 5.8)
+                    scooter.rotation.y = -0.35
+                    const waitingPerson = this.makeThreePerson({ jacket: 0x8a69c4, pants: 0x20272d, walkAmplitude: 0.08 })
+                    waitingPerson.position.set(-9.3, 0.18, conflictZ + 2.2)
+                    waitingPerson.rotation.y = Math.PI / 2
+                    const busBay = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.03, 13), asphaltDarkMaterial)
+                    busBay.position.set(8.2, 0.068, conflictZ - 16)
+                    group.add(queueCar, cyclist, scooter, waitingPerson, busBay)
+                }
+            }
+            if (this.result.scenario === 'front_car_brake') {
+                for (const x of [-0.74, 0.74]) {
+                    const mark = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.025, 13.2), skidMaterial)
+                    mark.position.set(x, 0.058, conflictZ + 7)
+                    mark.rotation.y = x > 0 ? 0.035 : -0.035
+                    group.add(mark)
+                }
+                const warningTriangle = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.08, 3), warningMaterial)
+                warningTriangle.rotation.set(Math.PI / 2, 0, Math.PI / 3)
+                warningTriangle.position.set(5.8, 0.42, conflictZ + 11)
+                const shoulderLine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 16), whiteMaterial)
+                shoulderLine.position.set(7.25, 0.07, conflictZ + 7)
+                group.add(warningTriangle, shoulderLine)
+            }
+            if (this.result.scenario === 'motorcycle_cut_in') {
+                for (let index = 0; index < 7; index += 1) {
+                    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.82, 14), warningMaterial)
+                    cone.position.set(6.4 - index * 0.18, 0.42, conflictZ + 12 - index * 4.2)
+                    group.add(cone)
+                    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.75, 14), warningMaterial)
+                    barrel.position.set(8.05, 0.39, conflictZ + 9 - index * 5.4)
+                    group.add(barrel)
+                }
+                const closedLane = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.03, 24), asphaltDarkMaterial)
+                closedLane.position.set(7.1, 0.066, conflictZ - 3)
+                group.add(closedLane)
+            }
+            this.threeScenarioProps = group
+            this.threeScene.add(group)
+        },
+        configureThreeEnvironment() {
+            const THREE = window.THREE
+            if (!this.threeScene || !THREE) return
+            const weather = this.result?.weather || 'clear'
+            const config = {
+                clear: { sky: 0x8fb4c7, skyTop: 0x4388b3, skyBottom: 0xdce6e5, fog: 0x8fb4c7, near: 45, far: 160, hemi: 2.25, sun: 3.2, headlight: 0.35, street: 0, exposure: 1.05, road: 0x5d6263, roughness: 0.94, metalness: 0.02 },
+                rain: { sky: 0x586c78, skyTop: 0x354957, skyBottom: 0x9aa6a8, fog: 0x667984, near: 20, far: 92, hemi: 1.45, sun: 1.25, headlight: 2.2, street: 0.8, exposure: 0.92, road: 0x353d42, roughness: 0.48, metalness: 0.18 },
+                fog: { sky: 0xaeb8b8, skyTop: 0x909d9e, skyBottom: 0xd4d7d2, fog: 0xb8c0bd, near: 8, far: 48, hemi: 1.7, sun: 1.1, headlight: 2.8, street: 1.2, exposure: 0.98, road: 0x596164, roughness: 0.82, metalness: 0.05 },
+                night: { sky: 0x050d18, skyTop: 0x020611, skyBottom: 0x15283b, fog: 0x07101c, near: 24, far: 100, hemi: 0.55, sun: 0.25, headlight: 6.5, street: 3.4, exposure: 0.72, road: 0x232a30, roughness: 0.58, metalness: 0.15 },
+            }[weather]
+            this.threeScene.background = new THREE.Color(config.sky)
+            this.threeScene.fog = new THREE.Fog(config.fog, config.near, config.far)
+            this.threeRenderer.toneMappingExposure = config.exposure
+            this.threeHemiLight.intensity = config.hemi
+            this.threeSunLight.intensity = config.sun
+            this.threeHeadlights.forEach(light => { light.intensity = config.headlight })
+            this.threeStreetLights.forEach(light => { light.intensity = config.street })
+            this.threeSkyMaterial.uniforms.topColor.value.setHex(config.skyTop)
+            this.threeSkyMaterial.uniforms.bottomColor.value.setHex(config.skyBottom)
+            if (this.threeRoadMaterial) {
+                this.threeRoadMaterial.color.setHex(config.road)
+                this.threeRoadMaterial.roughness = config.roughness
+                this.threeRoadMaterial.metalness = config.metalness
+                this.threeRoadMaterial.needsUpdate = true
+            }
+
+            if (this.threeRain) {
+                this.threeScene.remove(this.threeRain)
+                this.threeRain.geometry.dispose()
+                this.threeRain.material.dispose()
+                this.threeRain = null
+            }
+            if (weather === 'rain') {
+                const positions = new Float32Array(950 * 3)
+                for (let index = 0; index < 950; index += 1) {
+                    positions[index * 3] = (Math.random() - 0.5) * 34
+                    positions[index * 3 + 1] = Math.random() * 12
+                    positions[index * 3 + 2] = 8 - Math.random() * 105
+                }
+                const geometry = new THREE.BufferGeometry()
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+                const material = new THREE.PointsMaterial({ color: 0xcbe7f2, size: 0.085, transparent: true, opacity: 0.68 })
+                this.threeRain = new THREE.Points(geometry, material)
+                this.threeScene.add(this.threeRain)
+            }
+        },
+        disposeThreeScene() {
+            if (this.threeAnimationFrame) cancelAnimationFrame(this.threeAnimationFrame)
+            if (this.threeResizeObserver) this.threeResizeObserver.disconnect()
+            if (this.threeRenderer) this.threeRenderer.dispose()
+            if (this.threeDracoLoader) this.threeDracoLoader.dispose()
+            this.threeAnimationFrame = null
+            this.threeResizeObserver = null
+            this.threeRenderer = null
         },
         targetStyle(target) {
-            const x = Math.max(8, Math.min(92, 50 + (target.lateral_m || 0) * 13))
-            const y = Math.max(8, Math.min(92, 88 - (target.distance_m || 0) * 1.35))
-            return { left: x + '%', top: y + '%' }
+            if (this.threeCamera && window.THREE) {
+                const [x, , z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                const point = new window.THREE.Vector3(
+                    x,
+                    ['traffic light', 'traffic_light'].includes(target.class_name) ? 3.1 : 1.25,
+                    z
+                ).project(this.threeCamera)
+                const scale = Math.max(0.62, Math.min(1.45, 30 / (target.distance_m + 5)))
+                return {
+                    left: ((point.x + 1) / 2 * 100) + '%',
+                    top: ((1 - point.y) / 2 * 100) + '%',
+                    '--target-scale': scale,
+                }
+            }
+            return { left: '50%', top: '50%', '--target-scale': 1 }
         },
     },
     computed: {
-        frame() {
-            return this.currentFrame()
-        },
+        timeline() { return this.result?.timeline || [] },
+        frame() { return this.timeline[this.frameIndex] || null },
         peakRisk() {
             return this.result?.peak_risk || { level: 'low', score: 0, time_sec: 0 }
         },
+        primaryTarget() { return this.frame?.primary_target || null },
+        currentTtc() { return this.primaryTarget?.risk?.ttc_sec },
+        chartPoints() {
+            if (!this.timeline.length) return ''
+            const last = Math.max(1, this.timeline.length - 1)
+            return this.timeline.map((item, index) => {
+                const x = 10 + index / last * 580
+                const y = 142 - item.max_risk_score * 1.18
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+            }).join(' ')
+        },
+        chartAreaPoints() { return this.chartPoints ? `10,142 ${this.chartPoints} 590,142` : '' },
+        chartCursorX() {
+            return 10 + this.frameIndex / Math.max(1, this.timeline.length - 1) * 580
+        },
+        eventLog() {
+            const events = []
+            let previousLevel = null
+            this.timeline.slice(0, this.frameIndex + 1).forEach(item => {
+                if (item.max_risk_level !== previousLevel) {
+                    events.push({ time: item.time_sec, level: item.max_risk_level })
+                    previousLevel = item.max_risk_level
+                }
+            })
+            return events.slice(-4).reverse()
+        },
     },
     template: `
-    <section class="simulation-panel">
-        <div class="section-header"><h3>风险仿真</h3><span>2D driving simulation</span></div>
-        <div class="simulation-layout">
-            <div class="simulation-controls">
-                <label>
-                    <span>场景预设</span>
-                    <select :value="scenario" @change="$emit('scenarioChange', $event.target.value)">
+    <section class="simulation-panel simulation-cockpit">
+        <header class="sim-page-header">
+            <div>
+                <span class="sim-eyebrow">SCENARIO LAB / 01</span>
+                <h2>自动驾驶风险仿真驾驶舱</h2>
+            </div>
+            <div class="sim-run-state" :class="{ active: isPlaying }">
+                <span></span>{{ isPlaying ? '仿真运行中' : '仿真待机' }}
+            </div>
+        </header>
+
+        <div class="sim-toolbar">
+            <label class="sim-control sim-control-scene">
+                <span>场景</span>
+                <select :value="scenario" @change="$emit('scenarioChange', $event.target.value)">
+                    <optgroup label="预设场景">
                         <option v-for="item in presets" :key="item.key" :value="item.key">{{ item.name }}</option>
-                    </select>
-                </label>
-                <label>
-                    <span>自车速度 {{ speed }} km/h</span>
-                    <input type="range" min="0" max="100" step="5" :value="speed" @input="$emit('speedChange', Number($event.target.value))">
-                </label>
-                <label>
-                    <span>仿真时长 {{ duration }} s</span>
-                    <input type="range" min="2" max="10" step="1" :value="duration" @input="$emit('durationChange', Number($event.target.value))">
-                </label>
-                <button class="btn btn-primary" :disabled="isSimulating" @click="$emit('run')">
-                    {{ isSimulating ? '仿真中...' : '运行仿真' }}
-                </button>
-                <div v-if="result" class="simulation-summary">
-                    <strong :class="riskClass(peakRisk.level)">最高风险 {{ peakRisk.score }}</strong>
-                    <span>{{ peakRisk.time_sec }}s · {{ result.scenario_name }}</span>
-                    <p v-for="line in result.summary" :key="line">{{ line }}</p>
+                    </optgroup>
+                    <optgroup v-if="customScenarios?.length" label="自定义场景">
+                        <option v-for="item in customScenarios" :key="item.key" :value="item.key">{{ item.name }}</option>
+                    </optgroup>
+                </select>
+            </label>
+            <div class="sim-control sim-weather-control">
+                <span>环境</span>
+                <div class="sim-segmented">
+                    <button v-for="item in weatherOptions" :key="item.key" :class="{ active: weather === item.key }" @click="$emit('weatherChange', item.key)">
+                        {{ item.name }}
+                    </button>
                 </div>
             </div>
-            <div class="simulation-road">
-                <div class="road-lane lane-left"></div>
-                <div class="road-lane lane-right"></div>
-                <div class="ego-car">自车</div>
-                <template v-if="frame">
-                    <div
-                        v-for="target in frame.targets"
-                        :key="target.id"
-                        class="sim-target"
-                        :class="'risk-bg-' + target.risk.level"
-                        :style="targetStyle(target)"
-                    >
-                        <strong>{{ target.class_name_cn }}</strong>
-                        <span>{{ target.risk.score }}</span>
+            <label class="sim-control sim-control-range">
+                <span>自车速度 <strong>{{ speed }} km/h</strong></span>
+                <input type="range" min="0" max="100" step="5" :value="speed" @input="$emit('speedChange', Number($event.target.value))">
+            </label>
+            <label class="sim-control sim-control-range">
+                <span>时长 <strong>{{ duration }} s</strong></span>
+                <input type="range" min="2" max="10" step="1" :value="duration" @input="$emit('durationChange', Number($event.target.value))">
+            </label>
+            <div class="sim-toolbar-actions">
+                <button class="btn btn-primary sim-generate" :disabled="isSimulating" @click="$emit('run')">
+                    <span v-if="!isSimulating">?</span>{{ isSimulating ? '计算中...' : '生成仿真' }}
+                </button>
+                <button class="btn btn-secondary" :disabled="isComparing" @click="$emit('compare')">
+                    {{ isComparing ? '对比中...' : 'AEB 对比' }}
+                </button>
+                <button class="btn btn-secondary" @click="openScenarioEditor">场景编辑</button>
+            </div>
+        </div>
+
+        <section v-if="showScenarioEditor" class="sim-scenario-editor">
+            <div class="sim-editor-head">
+                <div><span>自定义场景</span><strong>{{ scenarioDraft.id ? '编辑配置' : '新建配置' }}</strong></div>
+                <button class="sim-icon-btn" title="关闭" @click="showScenarioEditor = false">×</button>
+            </div>
+            <div class="sim-editor-fields">
+                <label><span>名称</span><input v-model.trim="scenarioDraft.name" maxlength="80"></label>
+                <label><span>天气</span><select v-model="scenarioDraft.weather"><option v-for="item in weatherOptions" :key="item.key" :value="item.key">{{ item.name }}</option></select></label>
+                <label><span>自车速度 km/h</span><input v-model.number="scenarioDraft.ego_speed_kmh" type="number" min="0" max="140"></label>
+                <label><span>时长 s</span><input v-model.number="scenarioDraft.duration_sec" type="number" min="0.1" max="30" step="0.5"></label>
+                <label class="sim-editor-description"><span>描述</span><input v-model.trim="scenarioDraft.description" maxlength="500"></label>
+            </div>
+            <div class="sim-editor-json">
+                <label><span>目标 JSON</span><textarea v-model="scenarioDraft.targetsJson" spellcheck="false"></textarea></label>
+                <label><span>事件 JSON</span><textarea v-model="scenarioDraft.eventsJson" spellcheck="false"></textarea></label>
+            </div>
+            <div class="sim-editor-footer">
+                <span class="sim-editor-error">{{ scenarioEditorError }}</span>
+                <button v-if="scenarioDraft.id" class="btn btn-danger" @click="deleteDraftScenario">删除</button>
+                <button class="btn btn-primary" @click="submitScenario">保存场景</button>
+            </div>
+        </section>
+
+        <div v-if="result" class="sim-workspace">
+            <div class="sim-visual-column">
+                <div class="simulation-road" :class="['weather-' + result.weather, 'risk-stage-' + (frame?.max_risk_level || 'low')]">
+                    <canvas ref="simCanvas" class="sim-three-canvas"></canvas>
+                    <div class="sim-windshield"><i></i><i></i></div>
+                    <div v-if="result.weather === 'rain'" class="sim-wipers"><i></i><i></i></div>
+                    <div class="sim-stage-top">
+                        <div><span>场景</span><strong>{{ result.scenario_name }}</strong></div>
+                        <div class="sim-live"><i></i> {{ assetStatus === 'ready' ? 'MODEL READY' : '3D LIVE' }} · {{ frame?.time_sec.toFixed(2) }}s</div>
                     </div>
-                </template>
+                    <div class="sim-adas-bar">
+                        <span><i></i> LKA 车道居中</span><span>ACC {{ Math.round(frame?.ego_speed_kmh || 0) }} km/h</span><span>FCW 已监测</span>
+                    </div>
+                    <div class="sim-weather-layer"></div>
+                    <div class="sim-lane-assist"><span></span><span></span></div>
+                    <template v-if="frame">
+                        <div v-for="target in frame.targets" v-show="target.detected" :key="target.id" class="sim-target" :class="['risk-bg-' + target.risk.level, targetClass(target)]" :style="targetStyle(target)">
+                            <i class="corner corner-tl"></i><i class="corner corner-tr"></i>
+                            <i class="corner corner-bl"></i><i class="corner corner-br"></i>
+                            <div class="sim-target-label">
+                                <strong>{{ target.class_name_cn }}</strong>
+                                <small>{{ target.distance_m.toFixed(1) }}m · {{ Math.round(target.confidence * 100) }}%</small>
+                            </div>
+                        </div>
+                    </template>
+                    <div class="sim-drive-data">
+                        <div class="sim-speed-dial" :style="{ '--speed-progress': Math.min(100, frame?.ego_speed_kmh || 0) + '%' }"><strong>{{ Math.round(frame?.ego_speed_kmh || 0) }}</strong><span>km/h</span></div>
+                        <div><span>GEAR</span><strong>D</strong></div>
+                        <div><span>TTC</span><strong>{{ formatTtc(currentTtc) }}</strong></div>
+                    </div>
+                    <div class="sim-route-map"><i></i><span>前方 {{ primaryTarget ? primaryTarget.distance_m.toFixed(0) : '--' }}m</span><strong>保持车道</strong></div>
+                    <div v-if="frame?.aeb_active" class="sim-aeb-alert">
+                        <strong>AEB</strong><span>自动紧急制动</span><small>-{{ frame.brake_deceleration_mps2 }} m/s2 · TTC {{ formatTtc(currentTtc) }}</small>
+                    </div>
+                    <div class="sim-steering"><span></span></div>
+                    <div class="sim-vehicle-hood"></div>
+                    <div class="sim-risk-banner" :class="riskClass(frame?.max_risk_level)">
+                        <span>{{ riskLabel(frame?.max_risk_level) }}</span><strong>{{ frame?.max_risk_score }}</strong>
+                    </div>
+                </div>
+
+                <div class="sim-playback">
+                    <button class="sim-icon-btn" title="重新播放" @click="restartPlayback">?</button>
+                    <button class="sim-play-btn" :title="isPlaying ? '暂停' : '播放'" @click="togglePlayback">{{ isPlaying ? 'Ⅱ' : '?' }}</button>
+                    <span>{{ frame?.time_sec.toFixed(2) }}s</span>
+                    <input type="range" min="0" :max="timeline.length - 1" :value="frameIndex" @input="seekPlayback($event.target.value)">
+                    <span>{{ result.duration_sec.toFixed(2) }}s</span>
+                    <div class="sim-rate-control" aria-label="播放速度">
+                        <button v-for="rate in [0.5, 1, 2]" :key="rate" :class="{ active: playbackRate === rate }" @click="setPlaybackRate(rate)">{{ rate }}×</button>
+                    </div>
+                </div>
+            </div>
+
+            <aside class="sim-telemetry">
+                <div class="sim-kpi-grid">
+                    <article class="sim-kpi" :class="'kpi-' + (frame?.max_risk_level || 'low')"><span>风险评分</span><strong>{{ frame?.max_risk_score }}</strong><small>/ 100</small></article>
+                    <article class="sim-kpi"><span>预计碰撞 TTC</span><strong>{{ formatTtc(currentTtc) }}</strong><small>{{ currentTtc != null && currentTtc < 3 ? '立即干预' : '动态计算' }}</small></article>
+                    <article class="sim-kpi"><span>目标距离</span><strong>{{ primaryTarget ? primaryTarget.distance_m.toFixed(1) : '--' }}m</strong><small>相对纵向距离</small></article>
+                    <article class="sim-kpi"><span>感知状态</span><strong>{{ primaryTarget ? Math.round(primaryTarget.confidence * 100) : '--' }}%</strong><small>{{ frame?.perception_fps }} FPS</small></article>
+                </div>
+                <div class="sim-decision" :class="'decision-' + (frame?.max_risk_level || 'low')">
+                    <div><span>决策建议</span><strong>{{ riskLabel(frame?.max_risk_level) }}</strong></div>
+                    <p>{{ frame?.advice }}</p>
+                </div>
+                <div class="sim-events">
+                    <div class="sim-subhead"><span>事件流</span><strong>{{ eventLog.length }}</strong></div>
+                    <div v-for="event in eventLog" :key="event.time + event.level" class="sim-event-row">
+                        <time>{{ event.time.toFixed(2) }}s</time><i :class="'event-' + event.level"></i><span>{{ riskLabel(event.level) }}</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <div v-if="result" class="sim-analysis-band">
+            <div class="sim-chart-wrap">
+                <div class="sim-subhead"><span>风险时间曲线</span><strong>RISK / TIME</strong></div>
+                <svg class="sim-risk-chart" viewBox="0 0 600 160" preserveAspectRatio="none" aria-label="风险时间曲线">
+                    <line x1="10" y1="52" x2="590" y2="52" class="chart-threshold chart-high"></line>
+                    <line x1="10" y1="89" x2="590" y2="89" class="chart-threshold chart-medium"></line>
+                    <polygon :points="chartAreaPoints" class="chart-area"></polygon>
+                    <polyline :points="chartPoints" class="chart-line"></polyline>
+                    <line :x1="chartCursorX" y1="18" :x2="chartCursorX" y2="142" class="chart-cursor"></line>
+                    <circle :cx="chartCursorX" :cy="142 - (frame?.max_risk_score || 0) * 1.18" r="5" class="chart-point"></circle>
+                    <text x="14" y="48">高风险 76</text><text x="14" y="85">中风险 45</text>
+                </svg>
+                <div class="sim-chart-axis"><span>0s</span><span>{{ result.duration_sec }}s</span></div>
+            </div>
+            <div class="sim-report">
+                <div class="sim-subhead"><span>本次仿真报告</span><strong>REPORT</strong></div>
+                <div class="sim-report-grid">
+                    <div><span>峰值风险</span><strong>{{ peakRisk.score }}</strong><small>{{ peakRisk.time_sec }}s</small></div>
+                    <div><span>最小 TTC</span><strong>{{ formatTtc(result.metrics.min_ttc_sec) }}</strong><small>安全边界</small></div>
+                    <div><span>首次预警</span><strong>{{ result.metrics.first_warning_sec == null ? '--' : result.metrics.first_warning_sec + 's' }}</strong><small>响应时刻</small></div>
+                    <div><span>高风险持续</span><strong>{{ result.metrics.high_risk_duration_sec }}s</strong><small>累计时长</small></div>
+                    <div><span>平均置信度</span><strong>{{ Math.round(result.metrics.average_confidence * 100) }}%</strong><small>{{ result.weather_name }}</small></div>
+                    <div><span>碰撞结果</span><strong :class="result.metrics.collision ? 'risk-high' : 'risk-low'">{{ result.metrics.collision ? '发生碰撞' : '安全通过' }}</strong><small>仿真判定</small></div>
+                    <div><span>AEB 介入</span><strong>{{ result.metrics.aeb_activation_sec == null ? '未触发' : result.metrics.aeb_activation_sec + 's' }}</strong><small>闭环控制</small></div>
+                    <div><span>最终车速</span><strong>{{ (result.metrics.final_speed_kmh ?? result.ego_speed_kmh).toFixed(1) }}</strong><small>km/h</small></div>
+                </div>
             </div>
         </div>
-        <div v-if="result" class="sim-timeline">
-            <div v-for="item in result.timeline" :key="item.frame_index" class="sim-tick">
-                <span>{{ item.time_sec }}s</span>
-                <strong :class="riskClass(item.max_risk_level)">{{ item.max_risk_score }}</strong>
+
+        <section v-if="comparisonResult" class="sim-comparison-band">
+            <div class="sim-subhead"><span>AEB 干预效果对比</span><strong>SAME SCENARIO / CONTROL VARIABLE</strong></div>
+            <div class="sim-comparison-grid">
+                <article v-for="item in [
+                    { key: 'with', label: '启用 AEB', result: comparisonResult.withAeb },
+                    { key: 'without', label: '关闭 AEB', result: comparisonResult.withoutAeb }
+                ]" :key="item.key" class="sim-comparison-item">
+                    <header><strong>{{ item.label }}</strong><span>{{ item.result.weather_name }}</span></header>
+                    <svg viewBox="0 0 300 100" preserveAspectRatio="none" aria-label="风险对比曲线">
+                        <line x1="8" y1="33" x2="292" y2="33" class="chart-threshold chart-high"></line>
+                        <line x1="8" y1="57" x2="292" y2="57" class="chart-threshold chart-medium"></line>
+                        <polyline :points="comparisonChartPoints(item.result)" class="chart-line"></polyline>
+                    </svg>
+                    <div class="sim-comparison-metrics">
+                        <div><span>碰撞</span><strong :class="item.result.metrics.collision ? 'risk-high' : 'risk-low'">{{ item.result.metrics.collision ? '是' : '否' }}</strong></div>
+                        <div><span>最终车速</span><strong>{{ item.result.metrics.final_speed_kmh.toFixed(1) }} km/h</strong></div>
+                        <div><span>行驶距离</span><strong>{{ item.result.metrics.ego_distance_m.toFixed(1) }} m</strong></div>
+                        <div><span>AEB 介入</span><strong>{{ item.result.metrics.aeb_activation_sec == null ? '--' : item.result.metrics.aeb_activation_sec + 's' }}</strong></div>
+                    </div>
+                </article>
             </div>
-        </div>
+        </section>
     </section>
     `
 }
@@ -881,7 +2083,6 @@ const HistoryPanel = {
                 检测记录
                 <span v-if="allItems.length" class="history-badge">{{ allItems.length }}</span>
             </h3>
-
         </div>
         <div v-if="allItems.length" class="ph-timeline">
             <div v-for="(item, i) in allItems" :key="i" class="ph-row">
@@ -900,7 +2101,7 @@ const HistoryPanel = {
                         </div>
                         <div class="ph-thumb ph-thumb-clickable ph-thumb-video" v-else-if="isVideo(item) && item.result_video" @click="viewMedia(item)">
                             <video :src="item.result_video + '#t=0.5'" muted preload="metadata"></video>
-                            <div class="ph-play-icon">▶</div>
+                            <div class="ph-play-icon">?</div>
                             <div class="ph-thumb-overlay">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             </div>
