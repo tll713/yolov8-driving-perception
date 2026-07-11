@@ -2023,7 +2023,7 @@ const HistoryPanel = {
     props: { history: Array },
     emits: ['downloadLog', 'clearHistory'],
     data() {
-        return { allItems: [], viewItem: null }
+        return { allItems: [], viewItem: null, modalVideoPlaying: false, modalVideoProgress: 0 }
     },
     async mounted() {
         await this.loadFullHistory()
@@ -2073,6 +2073,34 @@ const HistoryPanel = {
             link.download = this.isImage(item) ? 'detection_result.png' : 'detection_result.mp4'
             link.href = url
             link.click()
+        },
+        toggleModalVideo() {
+            var video = document.querySelector('.ph-modal-video')
+            if (!video) return
+            if (video.paused) {
+                video.play()
+                this.modalVideoPlaying = true
+            } else {
+                video.pause()
+                this.modalVideoPlaying = false
+            }
+        },
+        onModalVideoPlay() { this.modalVideoPlaying = true },
+        onModalVideoPause() { this.modalVideoPlaying = false },
+        onModalVideoEnded() { this.modalVideoPlaying = false; this.modalVideoProgress = 0 },
+        onModalVideoTimeUpdate() {
+            var video = document.querySelector('.ph-modal-video')
+            if (video && video.duration) {
+                this.modalVideoProgress = (video.currentTime / video.duration) * 100
+            }
+        },
+        seekModalVideo(e) {
+            var video = document.querySelector('.ph-modal-video')
+            if (!video || !video.duration) return
+            var bar = e.currentTarget
+            var rect = bar.getBoundingClientRect()
+            var ratio = (e.clientX - rect.left) / rect.width
+            video.currentTime = ratio * video.duration
         },
     },
     template: `
@@ -2135,7 +2163,15 @@ const HistoryPanel = {
                 </div>
                 <div class="ph-modal-body">
                     <img v-if="isImage(viewItem) && viewItem.result_filename" :src="'/results/' + viewItem.result_filename" class="ph-modal-media" alt="">
-                    <video v-else-if="isVideo(viewItem) && viewItem.result_video" :src="viewItem.result_video" controls class="ph-modal-media"></video>
+                    <div v-else-if="isVideo(viewItem) && viewItem.result_video" class="ph-modal-video-wrap" @click="toggleModalVideo">
+                        <video :src="viewItem.result_video" class="ph-modal-media ph-modal-video" @play="onModalVideoPlay" @pause="onModalVideoPause" @ended="onModalVideoEnded" @timeupdate="onModalVideoTimeUpdate"></video>
+                        <div class="ph-modal-play-btn" v-if="!modalVideoPlaying">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                        </div>
+                        <div class="ph-modal-progress-bar" @click.stop="seekModalVideo">
+                            <div class="ph-modal-progress-fill" :style="{ width: modalVideoProgress + '%' }"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

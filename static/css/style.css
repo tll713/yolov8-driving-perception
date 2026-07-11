@@ -484,12 +484,12 @@ li::before {
 .ph-actions { display: flex; gap: 6px; margin-top: 4px; }
 .ph-modal {
     position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px); display: flex; align-items: flex-start; justify-content: center;
     padding: 20px;
 }
 .ph-modal-content {
     background: var(--bg-secondary); border: 1px solid var(--border);
-    border-radius: var(--radius); max-width: 900px; width: 100%; max-height: 90vh;
+    border-radius: var(--radius); max-width: 900px; width: 100%; max-height: 85vh;
     display: flex; flex-direction: column;
 }
 .ph-modal-header {
@@ -497,8 +497,29 @@ li::before {
     padding: 14px 20px; border-bottom: 1px solid var(--border);
     font-size: 0.88rem; font-weight: 600; color: var(--text-primary); flex-shrink: 0;
 }
-.ph-modal-body { padding: 16px; display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; overflow: hidden; }
-.ph-modal-media { max-width: 100%; max-height: calc(90vh - 80px); border-radius: 6px; object-fit: contain; }
+.ph-modal-body { padding: 16px; display: flex; justify-content: center; align-items: flex-start; flex: 1; min-height: 0; }
+.ph-modal-media { max-width: 100%; max-height: calc(85vh - 80px); border-radius: 6px; object-fit: contain; display: block; }
+.ph-modal-video-wrap { position: relative; display: inline-block; cursor: pointer; }
+.ph-modal-video-wrap .ph-modal-media { pointer-events: none; }
+.ph-modal-play-btn {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s ease; pointer-events: none;
+}
+.ph-modal-play-btn svg { margin-left: 4px; }
+.ph-modal-video-wrap:hover .ph-modal-play-btn { background: rgba(0,0,0,0.7); transform: translate(-50%, -50%) scale(1.08); }
+.ph-modal-progress-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+    background: rgba(255,255,255,0.15); cursor: pointer; z-index: 2;
+    transition: height 0.15s ease;
+}
+.ph-modal-video-wrap:hover .ph-modal-progress-bar { height: 6px; }
+.ph-modal-progress-fill {
+    height: 100%; background: var(--accent); border-radius: 0 2px 2px 0;
+    transition: width 0.1s linear;
+}
 
 .result-canvas { max-width: 100%; max-height: 560px; border-radius: 6px; }
 .video-result-wrap {
