@@ -78,6 +78,24 @@ class DemoRoutesTest(unittest.TestCase):
         self.assertEqual(len(data["timeline"]), 3)
         self.assertIn("peak_risk", data)
 
+    def test_custom_simulation_scenario_endpoints(self):
+        from backend.app import create_app
+
+        app = create_app()
+        app.testing = True
+        scenario = {"id": "custom-1", "name": "测试场景"}
+        with patch("backend.routes.simulation.list_custom_scenarios", return_value=[scenario]):
+            response = app.test_client().get("/api/simulation/scenarios")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["items"], [scenario])
+
+        with patch("backend.routes.simulation.save_custom_scenario", return_value=scenario):
+            response = app.test_client().post("/api/simulation/scenarios", json={"name": "测试场景"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"], scenario)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ API_ENDPOINTS = {
     "model_info": "/api/models/current",
     "simulation_presets": "/api/simulation/presets",
     "simulation_risk": "/api/simulation/risk",
+    "simulation_scenarios": "/api/simulation/scenarios",
+    "simulation_scenario_delete": "/api/simulation/scenarios/<scenario_id>",
 }
 
 

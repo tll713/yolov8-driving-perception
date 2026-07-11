@@ -23,12 +23,17 @@ const app = createApp({
         const demoScript = ref([])
         const dashboard = ref({})
         const simulationPresets = ref([])
+        const simulationCustomScenarios = ref([])
+        const simulationWeatherOptions = ref([])
         const simulationScenario = ref('pedestrian_crossing')
+        const simulationWeather = ref('clear')
         const simulationSpeed = ref(35)
         const simulationDuration = ref(5)
         const simulationResult = ref(null)
+        const simulationComparisonResult = ref(null)
         const isSimulating = ref(false)
         const maxRiskLevel = ref('')
+        const isComparingSimulation = ref(false)
         const currentUser = ref(localStorage.getItem('currentUser') || '')
         const detectionRequestId = ref(0)
         const pollTimerId = ref(null)
@@ -53,6 +58,7 @@ const app = createApp({
             await fetchModelInfo()
             await fetchHistory()
             await fetchSimulationPresets()
+            await fetchSimulationScenarios()
             await runSimulation()
         })
 
@@ -93,8 +99,19 @@ const app = createApp({
             try {
                 const res = await fetch('/api/simulation/presets')
                 const json = await res.json()
-                if (json.code === 0) simulationPresets.value = json.data.items || []
+                if (json.code === 0) {
+                    simulationPresets.value = json.data.items || []
+                    simulationWeatherOptions.value = json.data.weather_options || []
+                }
             } catch { simulationPresets.value = [] }
+        }
+
+        async function fetchSimulationScenarios() {
+            try {
+                const res = await fetch('/api/simulation/scenarios')
+                const json = await res.json()
+                simulationCustomScenarios.value = json.code === 0 ? (json.data.items || []) : []
+            } catch { simulationCustomScenarios.value = [] }
         }
 
         function computeOverallRisk(detList) {
@@ -419,37 +436,102 @@ const app = createApp({
 
         function onSimulationScenarioChange(value) {
             simulationScenario.value = value
-            const preset = simulationPresets.value.find(item => item.key === value)
+            simulationComparisonResult.value = null
+            const preset = [...simulationPresets.value, ...simulationCustomScenarios.value]
+                .find(item => item.key === value)
             if (preset) {
                 simulationSpeed.value = preset.ego_speed_kmh
                 simulationDuration.value = preset.duration_sec
+                simulationWeather.value = preset.weather || 'clear'
             }
+        }
+
+        function simulationPayload(autoBrake = true) {
+            const customScenario = simulationCustomScenarios.value.find(
+                item => item.key === simulationScenario.value
+            )
+            return {
+                ...(customScenario || {}),
+                scenario: simulationScenario.value,
+                weather: simulationWeather.value,
+                ego_speed_kmh: Number(simulationSpeed.value),
+                duration_sec: Number(simulationDuration.value),
+                step_sec: Number(customScenario?.step_sec || 0.25),
+                auto_brake: autoBrake,
+            }
+        }
+
+        async function requestSimulation(payload) {
+            const res = await fetch('/api/simulation/risk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            const json = await res.json()
+            if (json.code !== 0) throw new Error(json.message || '仿真计算失败')
+            return json.data
         }
 
         async function runSimulation() {
             isSimulating.value = true
             try {
-                const res = await fetch('/api/simulation/risk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        scenario: simulationScenario.value,
-                        ego_speed_kmh: Number(simulationSpeed.value),
-                        duration_sec: Number(simulationDuration.value),
-                        step_sec: 0.5,
-                    }),
-                })
-                const json = await res.json()
-                if (json.code === 0) {
-                    simulationResult.value = json.data
-                } else {
-                    alert(json.message || '仿真计算失败')
-                }
+                simulationResult.value = await requestSimulation(simulationPayload(true))
+                simulationComparisonResult.value = null
             } catch (err) {
                 console.error(err)
-                alert('仿真计算失败，请检查后端服务是否启动')
+                alert(err.message || '仿真计算失败，请检查后端服务是否启动')
             } finally {
                 isSimulating.value = false
+            }
+        }
+
+        async function compareSimulationAeb() {
+            isComparingSimulation.value = true
+            try {
+                const [withAeb, withoutAeb] = await Promise.all([
+                    requestSimulation(simulationPayload(true)),
+                    requestSimulation(simulationPayload(false)),
+                ])
+                simulationComparisonResult.value = { withAeb, withoutAeb }
+            } catch (err) {
+                console.error(err)
+                alert(err.message || '对比仿真失败')
+            } finally {
+                isComparingSimulation.value = false
+            }
+        }
+
+        async function saveSimulationScenario(scenario) {
+            try {
+                const res = await fetch('/api/simulation/scenarios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(scenario),
+                })
+                const json = await res.json()
+                if (json.code !== 0) throw new Error(json.message || '场景保存失败')
+                await fetchSimulationScenarios()
+                onSimulationScenarioChange(json.data.key)
+            } catch (err) {
+                console.error(err)
+                alert(err.message || '场景保存失败')
+            }
+        }
+
+        async function deleteSimulationScenario(scenarioId) {
+            if (!scenarioId || !confirm('确定删除这个自定义场景吗？')) return
+            try {
+                const res = await fetch(`/api/simulation/scenarios/${encodeURIComponent(scenarioId)}`, {
+                    method: 'DELETE',
+                })
+                const json = await res.json()
+                if (json.code !== 0) throw new Error(json.message || '场景删除失败')
+                await fetchSimulationScenarios()
+                onSimulationScenarioChange('pedestrian_crossing')
+                await runSimulation()
+            } catch (err) {
+                console.error(err)
+                alert(err.message || '场景删除失败')
             }
         }
 
@@ -515,10 +597,12 @@ const app = createApp({
             isDetecting, showBadge, confidence, maxRiskLevel,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
             sceneSummary, laneAnalysis, decisionTrace, demoScript, currentUser,
-            simulationPresets, simulationScenario, simulationSpeed, simulationDuration,
-            simulationResult, isSimulating,
+            simulationPresets, simulationCustomScenarios, simulationWeatherOptions, simulationScenario, simulationWeather,
+            simulationSpeed, simulationDuration,
+            simulationResult, simulationComparisonResult, isSimulating, isComparingSimulation,
             onFileSelected, onClear, onDetect, onDownloadLog, onClearHistory, onExportReport,
-            onSimulationScenarioChange, runSimulation
+            onSimulationScenarioChange, runSimulation, compareSimulationAeb,
+            saveSimulationScenario, deleteSimulationScenario
         }
     }
 })

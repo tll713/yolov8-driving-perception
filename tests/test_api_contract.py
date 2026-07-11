@@ -16,6 +16,11 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(API_ENDPOINTS["model_info"], "/api/models/current")
         self.assertEqual(API_ENDPOINTS["simulation_presets"], "/api/simulation/presets")
         self.assertEqual(API_ENDPOINTS["simulation_risk"], "/api/simulation/risk")
+        self.assertEqual(API_ENDPOINTS["simulation_scenarios"], "/api/simulation/scenarios")
+        self.assertEqual(
+            API_ENDPOINTS["simulation_scenario_delete"],
+            "/api/simulation/scenarios/<scenario_id>",
+        )
 
     def test_success_response_has_stable_shape(self):
         response = build_success_response({"count": 2})

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>自动驾驶感知与仿真系统</title>
+    <title>自动驾驶目标检测与风险提示系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -49,15 +49,21 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         风险仿真
                     </a>
-
+                    <a class="sidebar-item" :class="{ active: activeTab === 'report' }" @click="activeTab = 'report'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        检测报告
+                    </a>
                     <a class="sidebar-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                         系统状态
                     </a>
-
+                    <a class="sidebar-item" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        数据看板
+                    </a>
                     <a class="sidebar-item" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        历史视频
+                        检测历史
                     </a>
                 </div>
             </nav>
@@ -106,7 +112,6 @@
                 <div v-show="activeTab === 'risk'" class="tab-panel">
                     <risk-analysis-panel
                         :detections="detections"
-
                     ></risk-analysis-panel>
                 </div>
 
@@ -126,18 +131,37 @@
                 <div v-show="activeTab === 'simulation'" class="tab-panel">
                     <simulation-panel
                         :presets="simulationPresets"
+                        :custom-scenarios="simulationCustomScenarios"
+                        :weather-options="simulationWeatherOptions"
                         :scenario="simulationScenario"
+                        :weather="simulationWeather"
                         :speed="simulationSpeed"
                         :duration="simulationDuration"
                         :result="simulationResult"
+                        :comparison-result="simulationComparisonResult"
                         :is-simulating="isSimulating"
+                        :is-comparing="isComparingSimulation"
                         @scenario-change="onSimulationScenarioChange"
+                        @weather-change="simulationWeather = $event"
                         @speed-change="simulationSpeed = $event"
                         @duration-change="simulationDuration = $event"
                         @run="runSimulation"
+                        @compare="compareSimulationAeb"
+                        @save-scenario="saveSimulationScenario"
+                        @delete-scenario="deleteSimulationScenario"
                     ></simulation-panel>
                 </div>
 
+                <div v-show="activeTab === 'report'" class="tab-panel">
+                    <report-panel
+                        :current-file="currentFile"
+                        :stats="stats"
+                        :detections="detections"
+                        :advice="safetyAdvice"
+                        :model-info="modelInfo"
+                        @export-report="onExportReport"
+                    ></report-panel>
+                </div>
 
                 <div v-show="activeTab === 'system'" class="tab-panel">
                     <system-info-panel
@@ -146,6 +170,11 @@
                     ></system-info-panel>
                 </div>
 
+                <div v-show="activeTab === 'dashboard'" class="tab-panel">
+                    <dashboard-panel
+                        :dashboard="dashboard"
+                    ></dashboard-panel>
+                </div>
 
                 <div v-show="activeTab === 'history'" class="tab-panel">
                     <history-panel
@@ -159,6 +188,9 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/vue.global.prod.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/three.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/DRACOLoader.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/GLTFLoader.js') }}"></script>
     <script src="{{ url_for('static', filename='js/components.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

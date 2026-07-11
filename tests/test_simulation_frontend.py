@@ -1,0 +1,77 @@
+import unittest
+from pathlib import Path
+
+
+class SimulationFrontendTest(unittest.TestCase):
+    def setUp(self):
+        self.component_source = Path("static/js/components.js").read_text(encoding="utf-8")
+        self.app_source = Path("static/js/app.js").read_text(encoding="utf-8")
+        self.template_source = Path("templates/index.html").read_text(encoding="utf-8")
+
+    def test_dashboard_plays_backend_timeline(self):
+        self.assertIn("frameIndex", self.component_source)
+        self.assertIn("startPlayback", self.component_source)
+        self.assertIn("this.timeline[this.frameIndex]", self.component_source)
+        self.assertIn("风险时间曲线", self.component_source)
+        self.assertIn("setPlaybackRate", self.component_source)
+        self.assertIn("[0.5, 1, 2]", self.component_source)
+
+    def test_first_person_stage_uses_local_threejs_scene(self):
+        self.assertIn("js/three.min.js", self.template_source)
+        self.assertIn("js/DRACOLoader.js", self.template_source)
+        self.assertIn("js/GLTFLoader.js", self.template_source)
+        self.assertIn("new THREE.WebGLRenderer", self.component_source)
+        self.assertIn('ref="simCanvas"', self.component_source)
+        self.assertIn("syncThreeFrame", self.component_source)
+        self.assertIn("configureThreeEnvironment", self.component_source)
+        self.assertIn("loadThreeAssets", self.component_source)
+        self.assertIn("setDecoderPath('/static/js/draco/')", self.component_source)
+        self.assertIn("ferrari.glb", self.component_source)
+        self.assertIn("soldier.glb", self.component_source)
+        self.assertIn("target.world_position", self.component_source)
+        self.assertIn("target.heading_rad", self.component_source)
+
+    def test_cockpit_has_active_safety_feedback(self):
+        self.assertIn("sim-wipers", self.component_source)
+        self.assertIn("sim-adas-bar", self.component_source)
+        self.assertIn("sim-aeb-alert", self.component_source)
+        self.assertIn("自动紧急制动", self.component_source)
+
+    def test_weather_and_scenario_parameters_are_sent_to_backend(self):
+        self.assertIn("simulationWeatherOptions", self.app_source)
+        self.assertIn("weather: simulationWeather.value", self.app_source)
+        self.assertIn(':weather-options="simulationWeatherOptions"', self.template_source)
+
+    def test_report_uses_simulation_metrics(self):
+        for metric in (
+            "min_ttc_sec",
+            "first_warning_sec",
+            "high_risk_duration_sec",
+            "average_confidence",
+            "collision",
+            "aeb_activation_sec",
+            "final_speed_kmh",
+        ):
+            self.assertIn(f"result.metrics.{metric}", self.component_source)
+
+    def test_custom_scenario_editor_is_connected_to_persistence_api(self):
+        self.assertIn("showScenarioEditor", self.component_source)
+        self.assertIn("targetsJson", self.component_source)
+        self.assertIn("eventsJson", self.component_source)
+        self.assertIn("saveScenario", self.component_source)
+        self.assertIn("/api/simulation/scenarios", self.app_source)
+        self.assertIn("saveSimulationScenario", self.app_source)
+        self.assertIn("deleteSimulationScenario", self.app_source)
+        self.assertIn(':custom-scenarios="simulationCustomScenarios"', self.template_source)
+
+    def test_aeb_comparison_runs_same_scenario_with_control_variable(self):
+        self.assertIn("compareSimulationAeb", self.app_source)
+        self.assertIn("simulationPayload(true)", self.app_source)
+        self.assertIn("simulationPayload(false)", self.app_source)
+        self.assertIn("comparisonResult.withAeb", self.component_source)
+        self.assertIn("comparisonResult.withoutAeb", self.component_source)
+        self.assertIn('@compare="compareSimulationAeb"', self.template_source)
+
+
+if __name__ == "__main__":
+    unittest.main()
