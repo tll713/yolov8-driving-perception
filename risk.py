@@ -82,6 +82,7 @@ def _bbox_features(bbox, image_width, image_height):
         "center_y": round(center_y, 2),
         "bottom_y": round(bottom_y, 2),
         "area_ratio": round(area_ratio, 6),
+        "center_offset_ratio": round(abs(center_x / max(1, image_width) - 0.5), 4),
         "zone": _zone(center_x, center_y, image_width, image_height),
         "lane_overlap": lane_overlap,
         "distance_score": distance_score,
@@ -116,23 +117,49 @@ def _score_detection(class_name, confidence, features):
     return _clamp(round(raw_score))
 
 
-def _level_from_score(class_name, score, lane_overlap, confidence, distance_score, area_ratio, zone):
+def _level_from_score(
+    class_name,
+    score,
+    lane_overlap,
+    confidence,
+    distance_score,
+    area_ratio,
+    zone,
+    center_offset_ratio,
+):
     if class_name in TRAFFIC_INFO_CLASSES:
         return "info"
 
     if class_name in VEHICLE_CLASSES:
         is_center_path = zone.endswith("center")
-        is_critical_vehicle = (
-            score >= 88
-            and distance_score >= 72
-            and area_ratio >= 0.07
-            and lane_overlap >= 0.58
+        is_adjacent_front_path = (
+            not is_center_path
+            and score >= 90
+            and distance_score >= 76
+            and area_ratio >= 0.09
+            and lane_overlap >= 0.5
+            and center_offset_ratio <= 0.29
             and confidence >= 0.55
+        )
+        is_critical_vehicle = (
+            score >= 86
+            and distance_score >= 70
+            and area_ratio >= 0.065
+            and lane_overlap >= 0.55
+            and confidence >= 0.52
             and is_center_path
         )
-        if is_critical_vehicle:
+        if is_critical_vehicle or is_adjacent_front_path:
             return "high"
-        if score >= 56 and (distance_score >= 54 or lane_overlap >= 0.32):
+        is_clear_medium_vehicle = (
+            score >= 64
+            and (
+                distance_score >= 60
+                or (distance_score >= 50 and lane_overlap >= 0.45)
+                or area_ratio >= 0.065
+            )
+        )
+        if is_clear_medium_vehicle:
             return "medium"
         return "low"
 
@@ -142,7 +169,7 @@ def _level_from_score(class_name, score, lane_overlap, confidence, distance_scor
 
     if score >= 86 and is_close and is_in_path and is_reliable:
         return "high"
-    if score >= 52 and (lane_overlap >= 0.28 or distance_score >= 52):
+    if score >= 58 and (distance_score >= 56 or lane_overlap >= 0.38):
         return "medium"
     return "low"
 
@@ -199,6 +226,7 @@ def assess_detection(detection, image_width, image_height):
         features["distance_score"],
         features["area_ratio"],
         features["zone"],
+        features["center_offset_ratio"],
     )
     reason = "；".join(_reason_parts(class_name, confidence, features))
 
@@ -239,6 +267,7 @@ def assess_detections(detections, image_width, image_height):
                 "bottom_y": features["bottom_y"],
                 "area_ratio": features["area_ratio"],
                 "zone": features["zone"],
+                "center_offset_ratio": features["center_offset_ratio"],
                 "lane_overlap": features["lane_overlap"],
                 "distance_score": features["distance_score"],
                 "position_score": features["position_score"],

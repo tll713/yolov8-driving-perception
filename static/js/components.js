@@ -144,8 +144,18 @@ const DisplayArea = {
         const currentLane = ref(null)
         const currentFrameDetections = ref([])
 
+        function riskLevelFromDetections(detections) {
+            const priority = { low: 0, info: 1, medium: 2, high: 3 }
+            return (detections || []).reduce((maxLevel, item) => {
+                const level = item.risk?.level || item.risk_level || 'low'
+                return (priority[level] || 0) > (priority[maxLevel] || 0) ? level : maxLevel
+            }, 'low')
+        }
+
         const riskBorderClass = Vue.computed(() => {
-            const level = props.maxRiskLevel || ''
+            const level = props.fileType && props.fileType.startsWith('video/')
+                ? riskLevelFromDetections(currentFrameDetections.value)
+                : (props.maxRiskLevel || riskLevelFromDetections(props.detections))
             if (level === 'high') return 'risk-border-high'
             if (level === 'medium') return 'risk-border-medium'
             if (level === 'info') return 'risk-border-info'
@@ -176,7 +186,9 @@ const DisplayArea = {
             const timeline = props.detectionTimeline || []
             if (!timeline.length) {
                 currentLane.value = props.laneAnalysis || null
-                currentFrameDetections.value = props.detections || []
+                currentFrameDetections.value = props.fileType && props.fileType.startsWith('video/')
+                    ? []
+                    : (props.detections || [])
                 return
             }
             const current = video.currentTime || 0
