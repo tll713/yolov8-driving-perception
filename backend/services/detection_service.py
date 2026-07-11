@@ -210,6 +210,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
 
             if progress_callback and is_sample_frame:
                 risk_summary = summarize_risk(all_detections)
+                frame_risk_summary = summarize_risk(frame_detections)
                 progress = min(99, int(((frame_idx + 1) / total_frames) * 100)) if total_frames else 0
                 progress_callback(
                     {
@@ -222,6 +223,9 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                         "detections": frame_detections,
                         "all_detections": list(all_detections),
                         "lane_analysis": _lane_analysis_without_visual_lines(frame_lane_analysis),
+                        "frame_max_risk_level": frame_risk_summary["max_risk_level"],
+                        "frame_max_risk_score": frame_risk_summary["max_risk_score"],
+                        "frame_risk_counts": frame_risk_summary["risk_counts"],
                         **risk_summary,
                         **_build_demo_fields(all_detections),
                     }

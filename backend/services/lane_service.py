@@ -77,9 +77,9 @@ def _line_x_at_y(line, y):
 
 def _direction_from_offset(center_offset_ratio, heading_offset_ratio=0):
     if heading_offset_ratio <= -0.055 or center_offset_ratio <= -0.16:
-        return "left", "需要左转/左变道"
+        return "left", "需要向左转弯"
     if heading_offset_ratio >= 0.055 or center_offset_ratio >= 0.16:
-        return "right", "需要右转/右变道"
+        return "right", "需要向右转弯"
     return "straight", "直线行驶"
 
 
@@ -105,53 +105,42 @@ def apply_driving_advice(lane_analysis, detections, image_width):
         if center_x is None:
             center_x = (bbox[0] + bbox[2]) / 2
 
-        if distance_score >= 58 and lane_overlap >= 0.18:
+        if distance_score >= 62 and lane_overlap >= 0.12:
             close_targets.append({**item, "center_x": center_x, "distance_score": distance_score})
 
-    if not close_targets:
-        label = lane.get("direction_label") if lane.get("direction") != "unknown" else "保持车道观察"
-        lane.update(
-            {
-                "advice_direction": lane.get("direction", "keep"),
-                "advice_label": label,
-                "advice_message": lane.get("message") or "当前未发现近距离阻挡目标，建议保持车道并继续观察。",
-            }
-        )
-        return lane
-
-    left_targets = [item for item in close_targets if item["center_x"] < image_width * 0.45]
-    right_targets = [item for item in close_targets if item["center_x"] > image_width * 0.55]
+    left_targets = [item for item in close_targets if item["center_x"] < image_width * 0.47]
+    right_targets = [item for item in close_targets if item["center_x"] > image_width * 0.53]
     center_targets = [
         item
         for item in close_targets
-        if image_width * 0.45 <= item["center_x"] <= image_width * 0.55
+        if image_width * 0.47 <= item["center_x"] <= image_width * 0.53
     ]
 
     if left_targets and not right_targets:
         lane.update(
             {
                 "advice_direction": "right",
-                "advice_label": "左前方近距目标，建议向右避让",
-                "advice_message": "左前方检测到近距离目标，右侧空间相对更安全，建议减速并向右侧保持安全距离。",
+                "advice_label": "左前方有车，建议向右变道",
+                "advice_message": "左前方检测到近距离车辆，建议减速观察并向右侧安全空间变道。",
             }
         )
     elif right_targets and not left_targets:
         lane.update(
             {
                 "advice_direction": "left",
-                "advice_label": "右前方近距目标，建议向左避让",
-                "advice_message": "右前方检测到近距离目标，左侧空间相对更安全，建议减速并向左侧保持安全距离。",
+                "advice_label": "右前方有车，建议向左变道",
+                "advice_message": "右前方检测到近距离车辆，建议减速观察并向左侧安全空间变道。",
             }
         )
     elif center_targets:
         lane.update(
             {
                 "advice_direction": "slow",
-                "advice_label": "正前方近距目标，建议减速",
-                "advice_message": "正前方自车路径内存在近距离目标，不建议贸然变道，优先减速并保持车距。",
+                "advice_label": "正前方有车，建议减速保持车距",
+                "advice_message": "正前方自车路径内存在近距离车辆，优先减速并保持安全车距。",
             }
         )
-    else:
+    elif left_targets and right_targets:
         lane.update(
             {
                 "advice_direction": "slow",
@@ -159,6 +148,40 @@ def apply_driving_advice(lane_analysis, detections, image_width):
                 "advice_message": "左右前方均存在近距离目标，建议降低车速，等待更安全的通行空间。",
             }
         )
+    else:
+        direction = lane.get("direction")
+        if lane.get("status") != "detected" or direction == "unknown":
+            lane.update(
+                {
+                    "advice_direction": "keep",
+                    "advice_label": "保持车道观察",
+                    "advice_message": "当前未识别到稳定车道趋势，建议保持车道并继续观察。",
+                }
+            )
+        elif direction == "right":
+            lane.update(
+                {
+                    "advice_direction": "right",
+                    "advice_label": "需要向右转弯",
+                    "advice_message": "根据车道线趋势，系统判断前方道路需要向右转弯。",
+                }
+            )
+        elif direction == "left":
+            lane.update(
+                {
+                    "advice_direction": "left",
+                    "advice_label": "需要向左转弯",
+                    "advice_message": "根据车道线趋势，系统判断前方道路需要向左转弯。",
+                }
+            )
+        else:
+            lane.update(
+                {
+                    "advice_direction": "straight",
+                    "advice_label": "直线行驶",
+                    "advice_message": "根据车道线趋势，系统判断当前道路可保持直线行驶。",
+                }
+            )
 
     return lane
 
