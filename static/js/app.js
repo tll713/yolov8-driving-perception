@@ -123,6 +123,13 @@ const app = createApp({
         }
 
         function onFileSelected(file) {
+            const MAX_SIZE = 200 * 1024 * 1024
+            const isVideo = file.type && file.type.startsWith('video/')
+            if (isVideo && file.size > MAX_SIZE) {
+                const sizeMB = (file.size / 1024 / 1024).toFixed(1)
+                alert('视频文件大小为 ' + sizeMB + 'MB，超过 200MB 限制，请压缩后重新上传')
+                return
+            }
             const requestId = ++detectionRequestId.value
             currentFile.value = file
             filePreviewUrl.value = ''
