@@ -459,7 +459,7 @@
                         <div class="admin-table-wrap">
                             <table class="admin-table" id="records-table">
                                 <thead>
-                                    <tr><th>#</th><th>检测时间</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
+                                    <tr><th>#</th><th>检测时间</th><th>用户</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
                                 </thead>
                                 <tbody id="records-body"></tbody>
                             </table>
@@ -659,6 +659,7 @@
                     return '<tr>' +
                         '<td>' + (i+1) + '</td>' +
                         '<td>' + (item.created_at || '-') + '</td>' +
+                        '<td>' + (item.username || '-') + '</td>' +
                         '<td>' + (item.original_filename || item.filename || '-') + '</td>' +
                         '<td>' + (item.count || item.total_objects || 0) + '</td>' +
                         '<td>' + riskBadge(item.max_risk_level) + '</td>' +

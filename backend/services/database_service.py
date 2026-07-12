@@ -305,6 +305,7 @@ def list_detection_history(limit=50, username=None):
             "count": _to_int(row.get("total_objects")),
             "max_risk_level": row.get("max_risk_level"),
             "inference_time_ms": _to_int(row.get("inference_time_ms")),
+            "username": row.get("username") or "",
             "detections": row.get("detections") or [],
         }
         for row in rows
