@@ -35,7 +35,7 @@ const AppHeader = {
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1>自动驾驶场景感知系统</h1>
+                    <h1>自动驾驶感知与仿真系统</h1>
                     <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.inference_mode }} · {{ modelInfo.device }}</span>
                     <span class="logo-sub" v-else>YOLOv8 Detection & Driving Risk Assessment</span>
                 </div>
@@ -152,6 +152,7 @@ const DisplayArea = {
             }, 'low')
         }
 
+        //风险边框计算
         const riskBorderClass = Vue.computed(() => {
             const level = props.fileType && props.fileType.startsWith('video/')
                 ? riskLevelFromDetections(currentFrameDetections.value)
@@ -231,6 +232,7 @@ const DisplayArea = {
             })
         }
 
+        //车道线绘制
         function drawLaneOverlay(ctx, lane, scale, offsetX, offsetY) {
             if (!lane || lane.status !== 'detected') return
             ctx.save()
@@ -247,6 +249,7 @@ const DisplayArea = {
             ctx.restore()
         }
 
+        //高风险检测
         function hasHighRisk() {
             const activeDetections = props.fileType && props.fileType.startsWith('video/')
                 ? currentFrameDetections.value
@@ -258,10 +261,11 @@ const DisplayArea = {
             })
         }
 
+        //获取当前车道数据
         function displayLane() {
             return currentLane.value || props.laneAnalysis || null
         }
-
+        //动画循环控制
         function drawVideoOverlayFrame() {
             drawVideoOverlay()
             const video = videoRef.value
@@ -334,6 +338,7 @@ const DisplayArea = {
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
                 </template>
+                <!-- 视频区域 -->
                 <div v-else-if="fileType && fileType.startsWith('video/') && (filePreviewUrl || resultVideoUrl)" class="video-result-wrap animate-in">
                     <div class="video-overlay-wrap">
                         <video
