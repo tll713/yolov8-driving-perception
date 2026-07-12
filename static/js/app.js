@@ -307,7 +307,7 @@ const app = createApp({
             }
 
             if (await fetchJob()) {
-                pollTimerId.value = setInterval(fetchJob, 800)
+                pollTimerId.value = setInterval(fetchJob, 350)
             }
         }
 

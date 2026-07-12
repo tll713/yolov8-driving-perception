@@ -194,9 +194,15 @@ const DisplayArea = {
             }
             const current = video.currentTime || 0
             let frame = timeline[0]
+            let bestDelta = Math.abs((frame.timestamp_sec || 0) - current)
             for (const item of timeline) {
-                if (item.timestamp_sec <= current + 0.35) frame = item
-                else break
+                const delta = Math.abs((item.timestamp_sec || 0) - current)
+                if (delta <= bestDelta) {
+                    frame = item
+                    bestDelta = delta
+                } else if ((item.timestamp_sec || 0) > current) {
+                    break
+                }
             }
             currentLane.value = frame.lane_analysis || props.laneAnalysis || null
             currentFrameDetections.value = frame.detections || []
@@ -209,10 +215,12 @@ const DisplayArea = {
             const offsetX = (canvas.width - drawWidth) / 2
             const offsetY = (canvas.height - drawHeight) / 2
 
-            drawLaneOverlay(ctx, frame.lane_analysis || props.laneAnalysis, scale, offsetX, offsetY)
-
             ;(frame.detections || []).forEach(d => {
-                const [x1, y1, x2, y2] = d.bbox
+                const [rawX1, rawY1, rawX2, rawY2] = d.bbox
+                const x1 = Math.max(0, Math.min(sourceWidth, rawX1))
+                const y1 = Math.max(0, Math.min(sourceHeight, rawY1))
+                const x2 = Math.max(0, Math.min(sourceWidth, rawX2))
+                const y2 = Math.max(0, Math.min(sourceHeight, rawY2))
                 const risk = d.risk || {}
                 const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
                 const left = offsetX + x1 * scale
@@ -256,8 +264,7 @@ const DisplayArea = {
                 : props.detections
             return (activeDetections || []).some(d => {
                 const level = d.risk?.level || d.risk_level
-                const score = d.risk?.score || d.risk_score || 0
-                return level === 'high' && score >= 88
+                return level === 'high'
             })
         }
 
@@ -332,7 +339,6 @@ const DisplayArea = {
                 <div v-if="displayLane()" class="lane-floating-banner" :class="'lane-floating-' + (displayLane().advice_direction || displayLane().direction || 'unknown')">
                     <span>{{ displayLane().advice_label || displayLane().direction_label || '保持车道观察' }}</span>
                     <strong>{{ displayLane().confidence || 0 }}%</strong>
-                    <small>{{ displayLane().lane_count || 0 }} 条车道线</small>
                 </div>
                 <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
