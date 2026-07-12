@@ -25,7 +25,7 @@ def get_video_detection_job(job_id):
     return _job_snapshot(job_id)
 
 
-def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE):
+def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE, username=None):
     _validate_file(upload, ALLOWED_VIDEO_EXTENSIONS, "视频")
     confidence = _validate_confidence(confidence)
     original_filename = upload.filename
@@ -47,14 +47,14 @@ def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE):
 
     thread = Thread(
         target=_run_video_detection_job,
-        args=(job_id, upload_path, original_filename, confidence),
+        args=(job_id, upload_path, original_filename, confidence, username),
         daemon=True,
     )
     thread.start()
     return _job_snapshot(job_id)
 
 
-def _run_video_detection_job(job_id, upload_path, original_filename, confidence):
+def _run_video_detection_job(job_id, upload_path, original_filename, confidence, username=None):
     import cv2
 
     def publish_progress(payload):
@@ -119,6 +119,7 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
             original_filename,
             confidence=confidence,
             progress_callback=publish_progress,
+            username=username,
         )
     except Exception as exc:
         with _LOCK:

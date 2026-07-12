@@ -205,6 +205,7 @@ const app = createApp({
                 const formData = new FormData()
                 formData.append('file', currentFile.value)
                 formData.append('confidence', 0.5)
+                formData.append('username', currentUser.value || '')
 
                 const res = await fetch('/api/detections/images', { method: 'POST', body: formData })
                 const json = await res.json()
@@ -238,6 +239,7 @@ const app = createApp({
                 const formData = new FormData()
                 formData.append('file', currentFile.value)
                 formData.append('confidence', 0.5)
+                formData.append('username', currentUser.value || '')
 
                 const res = await fetch('/api/detections/videos/jobs', { method: 'POST', body: formData })
                 const json = await res.json()

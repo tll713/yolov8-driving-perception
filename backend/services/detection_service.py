@@ -67,7 +67,7 @@ def _lane_analysis_without_visual_lines(lane_analysis):
     return clean_lane_analysis
 
 
-def detect_uploaded_image(upload, confidence=0.5):
+def detect_uploaded_image(upload, confidence=0.5, username=None):
     _validate_file(upload, ALLOWED_IMAGE_EXTENSIONS, "图片")
     confidence = _validate_confidence(confidence)
     original_filename = upload.filename
@@ -89,6 +89,7 @@ def detect_uploaded_image(upload, confidence=0.5):
 
     result = {
         "type": "image",
+        "username": (username or "").strip(),
         "original_filename": original_filename,
         "filename": upload_path.name,
         "upload_path": str(upload_path),
@@ -112,14 +113,14 @@ def detect_uploaded_image(upload, confidence=0.5):
     return result
 
 
-def detect_uploaded_video(upload, confidence=DEFAULT_CONFIDENCE):
+def detect_uploaded_video(upload, confidence=DEFAULT_CONFIDENCE, username=None):
     _validate_file(upload, ALLOWED_VIDEO_EXTENSIONS, "视频")
     confidence = _validate_confidence(confidence)
     upload_path = save_upload(upload, upload_dir=UPLOAD_DIR)
-    return detect_video_file(upload_path, upload.filename, confidence=confidence)
+    return detect_video_file(upload_path, upload.filename, confidence=confidence, username=username)
 
 
-def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDENCE, progress_callback=None):
+def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDENCE, progress_callback=None, username=None):
     import cv2
 
     confidence = _validate_confidence(confidence)
@@ -241,6 +242,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     processed_seconds = round(frame_idx / fps, 2) if fps else None
     result = {
         "type": "video",
+        "username": (username or "").strip(),
         "original_filename": original_filename,
         "filename": upload_path.name,
         "upload_path": str(upload_path),

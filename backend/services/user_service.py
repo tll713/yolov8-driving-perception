@@ -5,12 +5,74 @@ from uuid import uuid4
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from backend.config import USER_FILE, USER_STORAGE
+from backend.config import USER_FILE, USER_STORAGE, USER_TABLE_NAME
 from backend.services.database_service import get_connection
 
 
 _LOCK = Lock()
-_USER_TABLE = "system_user"
+
+
+def _quote_identifier(identifier):
+    identifier = (identifier or "").strip()
+    if not identifier:
+        raise RuntimeError("USER_TABLE_NAME cannot be empty")
+    return f"`{identifier.replace('`', '``')}`"
+
+
+_USER_TABLE = _quote_identifier(USER_TABLE_NAME)
+_USE_CHINESE_USER_TABLE = USER_TABLE_NAME == "用户表"
+_USER_COLUMNS = (
+    {
+        "id": "编号",
+        "username": "用户名",
+        "email": "邮箱",
+        "password_hash": "密码哈希",
+        "role": "用户角色",
+        "status": "账号状态",
+        "created_at": "创建时间",
+    }
+    if _USE_CHINESE_USER_TABLE
+    else {
+        "id": "id",
+        "username": "username",
+        "email": "email",
+        "password_hash": "password_hash",
+        "role": "role",
+        "status": "status",
+        "created_at": "created_at",
+        "updated_at": "updated_at",
+    }
+)
+
+
+def _col(name):
+    return _quote_identifier(_USER_COLUMNS[name])
+
+
+def _select_account_sql():
+    fields = [
+        f"{_col('id')} AS id",
+        f"{_col('username')} AS username",
+        f"{_col('email')} AS email",
+        f"{_col('password_hash')} AS password_hash",
+        f"{_col('role')} AS role",
+        f"{_col('status')} AS status",
+        f"{_col('created_at')} AS created_at",
+    ]
+    if "updated_at" in _USER_COLUMNS:
+        fields.append(f"{_col('updated_at')} AS updated_at")
+    else:
+        fields.append(f"{_col('created_at')} AS updated_at")
+    return f"SELECT {', '.join(fields)} FROM {_USER_TABLE}"
+
+
+def _touch_updated_at(fields):
+    if "updated_at" in _USER_COLUMNS:
+        fields["updated_at"] = _now()
+
+
+def _assignments(fields):
+    return ", ".join([f"{_col(key)} = %({key})s" for key in fields])
 
 
 class UserServiceError(ValueError):
@@ -55,6 +117,25 @@ def _save_store(data):
 
 def _ensure_user_table(conn):
     with conn.cursor() as cursor:
+        if _USE_CHINESE_USER_TABLE:
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {_USER_TABLE} (
+                    `编号` INT PRIMARY KEY AUTO_INCREMENT,
+                    `用户名` VARCHAR(20) NOT NULL UNIQUE,
+                    `邮箱` VARCHAR(255) NOT NULL,
+                    `密码哈希` VARCHAR(255) NOT NULL,
+                    `用户角色` VARCHAR(20) NOT NULL DEFAULT 'user',
+                    `账号状态` VARCHAR(20) NOT NULL DEFAULT 'active',
+                    `创建时间` DATETIME NOT NULL,
+                    UNIQUE KEY uk_user_email_role (`邮箱`, `用户角色`),
+                    KEY idx_user_role (`用户角色`),
+                    KEY idx_user_status (`账号状态`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+            return
+
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {_USER_TABLE} (
@@ -66,9 +147,9 @@ def _ensure_user_table(conn):
                 status VARCHAR(20) NOT NULL DEFAULT 'active',
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL,
-                UNIQUE KEY uk_system_user_email_role (email, role),
-                KEY idx_system_user_role (role),
-                KEY idx_system_user_status (status)
+                UNIQUE KEY uk_user_email_role (email, role),
+                KEY idx_user_role (role),
+                KEY idx_user_status (status)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
@@ -89,10 +170,10 @@ def _db_public_user(row):
 
 
 def _db_find_by_username(conn, username, role=None):
-    sql = f"SELECT * FROM {_USER_TABLE} WHERE username = %s"
+    sql = f"{_select_account_sql()} WHERE {_col('username')} = %s"
     params = [username]
     if role is not None:
-        sql += " AND role = %s"
+        sql += f" AND {_col('role')} = %s"
         params.append(role)
     with conn.cursor() as cursor:
         cursor.execute(sql, params)
@@ -100,10 +181,10 @@ def _db_find_by_username(conn, username, role=None):
 
 
 def _db_find_by_email(conn, email, role, exclude_id=None):
-    sql = f"SELECT * FROM {_USER_TABLE} WHERE email = %s AND role = %s"
+    sql = f"{_select_account_sql()} WHERE {_col('email')} = %s AND {_col('role')} = %s"
     params = [email, role]
     if exclude_id is not None:
-        sql += " AND id <> %s"
+        sql += f" AND {_col('id')} <> %s"
         params.append(exclude_id)
     with conn.cursor() as cursor:
         cursor.execute(sql, params)
@@ -139,17 +220,34 @@ def _db_create_account(username, email, password, role, status="active"):
             "updated_at": _now(),
         }
         with conn.cursor() as cursor:
-            cursor.execute(
-                f"""
-                INSERT INTO {_USER_TABLE} (
-                    id, username, email, password_hash, role, status, created_at, updated_at
-                ) VALUES (
-                    %(id)s, %(username)s, %(email)s, %(password_hash)s,
-                    %(role)s, %(status)s, %(created_at)s, %(updated_at)s
+            if _USE_CHINESE_USER_TABLE:
+                cursor.execute(
+                    f"""
+                    INSERT INTO {_USER_TABLE} (
+                        {_col('username')}, {_col('email')}, {_col('password_hash')},
+                        {_col('role')}, {_col('status')}, {_col('created_at')}
+                    ) VALUES (
+                        %(username)s, %(email)s, %(password_hash)s,
+                        %(role)s, %(status)s, %(created_at)s
+                    )
+                    """,
+                    user,
                 )
-                """,
-                user,
-            )
+                if cursor.lastrowid:
+                    user["id"] = cursor.lastrowid
+            else:
+                cursor.execute(
+                    f"""
+                    INSERT INTO {_USER_TABLE} (
+                        {_col('id')}, {_col('username')}, {_col('email')}, {_col('password_hash')},
+                        {_col('role')}, {_col('status')}, {_col('created_at')}, {_col('updated_at')}
+                    ) VALUES (
+                        %(id)s, %(username)s, %(email)s, %(password_hash)s,
+                        %(role)s, %(status)s, %(created_at)s, %(updated_at)s
+                    )
+                    """,
+                    user,
+                )
         conn.commit()
         return _public_user(user)
     except UserServiceError:
@@ -247,11 +345,13 @@ def _db_update_user_profile(username, updates):
                 raise UserServiceError("当前密码错误", 1012)
             fields["password_hash"] = generate_password_hash(new_password)
 
-        fields["updated_at"] = _now()
-        assignments = ", ".join([f"{key} = %({key})s" for key in fields])
+        _touch_updated_at(fields)
+        if not fields:
+            return _db_public_user(user)
+
         with conn.cursor() as cursor:
             cursor.execute(
-                f"UPDATE {_USER_TABLE} SET {assignments} WHERE id = %(id)s",
+                f"UPDATE {_USER_TABLE} SET {_assignments(fields)} WHERE {_col('id')} = %(id)s",
                 {**fields, "id": user["id"]},
             )
         conn.commit()
@@ -276,10 +376,9 @@ def _db_list_users():
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                SELECT id, username, email, role, status, created_at, updated_at
-                FROM {_USER_TABLE}
-                WHERE role = 'user'
-                ORDER BY created_at DESC
+                {_select_account_sql()}
+                WHERE {_col('role')} = 'user'
+                ORDER BY {_col('created_at')} DESC
                 """
             )
             return [_db_public_user(row) for row in cursor.fetchall()]
@@ -330,16 +429,15 @@ def _db_update_user_by_admin(username, updates):
         if not fields:
             return _db_public_user(user)
 
-        fields["updated_at"] = _now()
-        assignments = ", ".join([f"{key} = %({key})s" for key in fields])
+        _touch_updated_at(fields)
         with conn.cursor() as cursor:
             cursor.execute(
-                f"UPDATE {_USER_TABLE} SET {assignments} WHERE id = %(id)s",
+                f"UPDATE {_USER_TABLE} SET {_assignments(fields)} WHERE {_col('id')} = %(id)s",
                 {**fields, "id": user["id"]},
             )
         conn.commit()
         with conn.cursor() as cursor:
-            cursor.execute(f"SELECT * FROM {_USER_TABLE} WHERE id = %s", [user["id"]])
+            cursor.execute(f"{_select_account_sql()} WHERE {_col('id')} = %s", [user["id"]])
             return _db_public_user(cursor.fetchone())
     except UserServiceError:
         conn.rollback()
@@ -361,7 +459,7 @@ def _db_delete_user_by_admin(username):
         _ensure_user_table(conn)
         with conn.cursor() as cursor:
             cursor.execute(
-                f"DELETE FROM {_USER_TABLE} WHERE username = %s AND role = 'user'",
+                f"DELETE FROM {_USER_TABLE} WHERE {_col('username')} = %s AND {_col('role')} = 'user'",
                 [username],
             )
             if cursor.rowcount == 0:
