@@ -55,17 +55,6 @@ def create_app():
 
         return render_template("register.html")
 
-    @app.get("/admin/login")
-    def admin_login_page():
-        from flask import render_template
-
-        return render_template("admin_login.html")
-
-    @app.get("/admin/register")
-    def admin_register_page():
-        from flask import render_template
-
-        return render_template("admin_register.html")
 
     @app.get("/admin")
     def admin_dashboard():

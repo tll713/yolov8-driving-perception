@@ -52,7 +52,7 @@ const AppHeader = {
                 <div class="header-auth" v-else>
                     <a href="/login" class="btn btn-ghost btn-sm">登录</a>
                     <a href="/register" class="btn btn-primary btn-sm">注册</a>
-                    <a href="/admin/login" class="btn btn-ghost btn-sm">管理</a>
+
                 </div>
             </div>
         </div>
@@ -63,14 +63,24 @@ const AppHeader = {
 const ControlPanel = {
     props: {
         hasFile: Boolean,
-        isDetecting: Boolean
+        isDetecting: Boolean,
+        currentUser: String
     },
-    emits: ['fileSelected', 'detect', 'clear'],
+    emits: ['fileSelected', 'detect', 'clear', 'requireLogin'],
     setup(props, { emit }) {
         const fileName = ref('未选择文件')
         const isDragOver = ref(false)
 
+        function requireLogin() {
+            if (!props.currentUser) {
+                emit('requireLogin')
+                return true
+            }
+            return false
+        }
+
         function handleFile(file) {
+            if (requireLogin()) return
             fileName.value = file.name
             emit('fileSelected', file)
         }
@@ -78,10 +88,15 @@ const ControlPanel = {
             const file = e.target.files[0]
             if (file) handleFile(file)
         }
+        function onUploadClick() {
+            if (requireLogin()) return
+            document.getElementById('fileInput').click()
+        }
         function onDragOver(e) { e.preventDefault(); isDragOver.value = true }
         function onDragLeave() { isDragOver.value = false }
         function onDrop(e) {
             e.preventDefault(); isDragOver.value = false
+            if (requireLogin()) return
             const file = e.dataTransfer.files[0]
             if (file) handleFile(file)
         }
@@ -92,14 +107,14 @@ const ControlPanel = {
             emit('clear')
         }
 
-        return { fileName, isDragOver, onFileChange, onDragOver, onDragLeave, onDrop, onClear }
+        return { fileName, isDragOver, onFileChange, onUploadClick, onDragOver, onDragLeave, onDrop, onClear }
     },
     template: `
     <section class="controls-panel">
         <div class="controls-row">
             <div class="upload-zone" :class="{ 'drag-over': isDragOver }"
                 @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-                @click="$el.querySelector('input[type=file]').click()">
+                @click="onUploadClick">
                 <div class="upload-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -430,10 +445,7 @@ const StatsGrid = {
         inferenceTime: String,
         classCounts: Object,
         riskCounts: Object,
-        maxRiskScore: Number,
-        inferenceMode: String,
-        inferenceSize: Number,
-        refined: Boolean
+
     },
     template: `
     <section class="stats-grid">
@@ -1995,45 +2007,6 @@ const DashboardPanel = {
     `
 }
 
-const ReportPanel = {
-    props: {
-        currentFile: Object,
-        stats: Object,
-        detections: Array,
-        advice: Array,
-        modelInfo: Object,
-    },
-    emits: ['exportReport'],
-    template: `
-    <section class="flow-panel">
-        <div class="section-header"><h3>检测报告</h3><span>HTML / printable</span></div>
-        <div class="report-row">
-            <div>
-                <strong>{{ currentFile?.name || '暂无检测文件' }}</strong>
-                <p>报告包含模型信息、风险统计、目标明细、驾驶建议和算法流程，可直接打印或另存为 PDF。</p>
-            </div>
-            <button class="btn btn-primary" :disabled="!detections.length" @click="$emit('exportReport')">生成报告</button>
-        </div>
-    </section>
-    `
-}
-
-const SystemInfoPanel = {
-    props: { modelInfo: Object, healthStatus: Object },
-    template: `
-    <section class="system-panel">
-        <div class="section-header"><h3>系统运行状态</h3><span>{{ healthStatus?.status === 'ok' ? 'online' : 'checking' }}</span></div>
-        <div class="system-grid">
-            <div><span>模型</span><strong>{{ modelInfo?.name || '-' }}</strong></div>
-            <div><span>模型文件</span><strong>{{ modelInfo?.exists ? '已就绪' : '缺失' }}</strong></div>
-            <div><span>推理模式</span><strong>{{ modelInfo?.inference_mode || '-' }}</strong></div>
-            <div><span>输入尺寸</span><strong>{{ modelInfo?.image_size || '-' }} / {{ modelInfo?.refine_image_size || '-' }}</strong></div>
-            <div><span>补检阈值</span><strong>{{ modelInfo?.refine_confidence || '-' }}</strong></div>
-            <div><span>运行设备</span><strong>{{ modelInfo?.device || 'cpu' }}</strong></div>
-        </div>
-    </section>
-    `
-}
 
 
 const HistoryPanel = {
@@ -2208,8 +2181,7 @@ window.AppComponents = {
 
     SimulationPanel,
     DashboardPanel,
-    ReportPanel,
-    SystemInfoPanel,
+
 
     HistoryPanel,
 }

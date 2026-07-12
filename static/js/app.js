@@ -35,6 +35,7 @@ const app = createApp({
         const maxRiskLevel = ref('')
         const isComparingSimulation = ref(false)
         const currentUser = ref(localStorage.getItem('currentUser') || '')
+        const showLoginModal = ref(false)
         const detectionRequestId = ref(0)
         const pollTimerId = ref(null)
 
@@ -45,10 +46,7 @@ const app = createApp({
             inferenceTime: '- ms',
             classCounts: {},
             riskCounts: { low: 0, info: 0, medium: 0, high: 0 },
-            maxRiskScore: 0,
-            inferenceMode: '',
-            inferenceSize: null,
-            refined: false,
+
         })
 
         const historyList = ref([])
@@ -152,10 +150,7 @@ const app = createApp({
             stats.inferenceTime = '- ms'
             stats.classCounts = {}
             stats.riskCounts = { low: 0, info: 0, medium: 0, high: 0 }
-            stats.maxRiskScore = 0
-            stats.inferenceMode = ''
-            stats.inferenceSize = null
-            stats.refined = false
+
         }
 
         function resetDetectionResults() {
@@ -343,10 +338,7 @@ const app = createApp({
             stats.inferenceTime = data.inference_time_ms ? `${data.inference_time_ms} ms` : '— ms'
             stats.inferenceTime = data.inference_time_ms ? `${data.inference_time_ms} ms` : '- ms'
             stats.riskCounts = data.risk_counts || summarizeRiskCounts(detList)
-            stats.maxRiskScore = data.max_risk_score || maxRiskScore(detList)
-            stats.inferenceMode = data.inference_mode || modelInfo.value?.inference_mode || ''
-            stats.inferenceSize = data.inference_size || modelInfo.value?.image_size || null
-            stats.refined = !!data.refined
+
 
             const counts = {}
             detList.forEach(d => {
@@ -365,9 +357,7 @@ const app = createApp({
             return counts
         }
 
-        function maxRiskScore(detList) {
-            return detList.reduce((max, item) => Math.max(max, item.risk?.score || item.risk_score || 0), 0)
-        }
+
 
         async function onDownloadLog() {
             try {
@@ -542,74 +532,25 @@ const app = createApp({
             }
         }
 
-        function onExportReport() {
-            const riskRows = detections.value.map((d, index) => `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${d.class_name_cn || d.class_name || '-'}</td>
-                    <td>${((d.confidence || 0) * 100).toFixed(1)}%</td>
-                    <td>${d.risk?.level || d.risk_level || '-'}</td>
-                    <td>${d.risk?.score || d.risk_score || 0}</td>
-                    <td>${d.risk?.reason || d.risk_reason || '-'}</td>
-                </tr>
-            `).join('')
-            const adviceItems = safetyAdvice.value.map(item => `<li>${item.message}</li>`).join('')
-            const html = `
-                <!doctype html>
-                <html lang="zh-CN">
-                <head>
-                    <meta charset="utf-8">
-                    <title>自动驾驶场景风险检测报告</title>
-                    <style>
-                        body { font-family: Arial, "Microsoft YaHei", sans-serif; padding: 32px; color: #111827; }
-                        h1 { margin-bottom: 4px; }
-                        .meta, li { line-height: 1.7; }
-                        .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
-                        .card { border: 1px solid #d1d5db; padding: 14px; border-radius: 8px; }
-                        .card span { display: block; color: #6b7280; font-size: 12px; }
-                        .card strong { font-size: 22px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-                        th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 13px; }
-                        th { background: #f3f4f6; }
-                    </style>
-                </head>
-                <body>
-                    <h1>自动驾驶场景风险检测报告</h1>
-                    <div class="meta">文件：${currentFile.value?.name || '-'}</div>
-                    <div class="meta">模型：${modelInfo.value?.name || '-'} · 模式：${stats.inferenceMode || '-'}</div>
-                    <div class="cards">
-                        <div class="card"><span>检测目标</span><strong>${stats.totalCount}</strong></div>
-                        <div class="card"><span>整体风险</span><strong>${stats.overallRisk}</strong></div>
-                        <div class="card"><span>最高风险分</span><strong>${stats.maxRiskScore}</strong></div>
-                        <div class="card"><span>推理耗时</span><strong>${stats.inferenceTime}</strong></div>
-                    </div>
-                    <h2>驾驶安全建议</h2>
-                    <ul>${adviceItems || '<li>暂无建议</li>'}</ul>
-                    <h2>目标明细</h2>
-                    <table>
-                        <thead><tr><th>#</th><th>类别</th><th>置信度</th><th>风险等级</th><th>风险分</th><th>原因</th></tr></thead>
-                        <tbody>${riskRows || '<tr><td colspan="6">暂无目标</td></tr>'}</tbody>
-                    </table>
-                </body>
-                </html>
-            `
-            const reportWindow = window.open('', '_blank')
-            reportWindow.document.write(html)
-            reportWindow.document.close()
-        }
+
+
+        function onRequireLogin() { showLoginModal.value = true }
+        function closeLoginModal() { showLoginModal.value = false }
+        function goToLogin() { window.location.href = '/login' }
 
         return {
             activeTab,
             currentFile, filePreviewUrl, fileType, detections, detectionTimeline, resultVideoUrl, resultImageUrl,
             isDetecting, showBadge, confidence, maxRiskLevel,
             healthStatus, modelInfo, stats, historyList, safetyAdvice, dashboard,
-            sceneSummary, laneAnalysis, decisionTrace, demoScript, currentUser,
+            sceneSummary, laneAnalysis, decisionTrace, demoScript, currentUser, showLoginModal,
             simulationPresets, simulationCustomScenarios, simulationWeatherOptions, simulationScenario, simulationWeather,
             simulationSpeed, simulationDuration,
             simulationResult, simulationComparisonResult, isSimulating, isComparingSimulation,
-            onFileSelected, onClear, onDetect, onDownloadLog, onClearHistory, onExportReport,
+            onFileSelected, onClear, onDetect, onDownloadLog, onClearHistory,
             onSimulationScenarioChange, runSimulation, compareSimulationAeb,
-            saveSimulationScenario, deleteSimulationScenario
+            saveSimulationScenario, deleteSimulationScenario,
+            onRequireLogin, closeLoginModal, goToLogin
         }
     }
 })
@@ -625,10 +566,12 @@ app.component('scene-insight-panel', window.AppComponents.SceneInsightPanel)
 
 app.component('simulation-panel', window.AppComponents.SimulationPanel)
 app.component('dashboard-panel', window.AppComponents.DashboardPanel)
-app.component('report-panel', window.AppComponents.ReportPanel)
-app.component('system-info-panel', window.AppComponents.SystemInfoPanel)
 
 app.component('history-panel', window.AppComponents.HistoryPanel)
 
-app.mount('#app')
+if (!localStorage.getItem('currentUser')) {
+    window.location.href = '/login'
+} else {
+    app.mount('#app')
+}
 })()

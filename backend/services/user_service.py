@@ -269,10 +269,29 @@ def register_admin(username, email, password):
 def authenticate_admin(username, password):
     username = (username or "").strip()
     if not username or not password:
-        raise UserServiceError("用户名和密码不能为空", 2005)
+        raise UserServiceError("管理员用户名和密码不能为空", 2005)
 
     data = _load_store()
     admin = _find_by_username(data["admins"], username)
     if not admin or not check_password_hash(admin.get("password_hash", ""), password):
         raise UserServiceError("管理员用户名或密码错误", 2006)
     return _public_user(admin)
+
+
+def authenticate_any(username, password):
+    username = (username or "").strip()
+    if not username or not password:
+        raise UserServiceError("用户名和密码不能为空", 1006)
+
+    data = _load_store()
+    admin = _find_by_username(data["admins"], username)
+    if admin:
+        if not check_password_hash(admin.get("password_hash", ""), password):
+            raise UserServiceError("密码错误", 2006)
+        return _public_user(admin)
+    user = _find_by_username(data["users"], username)
+    if not user or not check_password_hash(user.get("password_hash", ""), password):
+        raise UserServiceError("用户名或密码错误", 1007)
+    if user.get("status") == "disabled":
+        raise UserServiceError("该用户已被管理员禁用", 1008)
+    return _public_user(user)

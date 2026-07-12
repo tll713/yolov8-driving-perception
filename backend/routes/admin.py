@@ -13,7 +13,7 @@ from backend.services.user_service import (
     create_user_by_admin,
     delete_user_by_admin,
     list_users,
-    register_admin,
+
     update_user_by_admin,
 )
 
@@ -60,15 +60,6 @@ def _format_uptime():
     minutes, seconds = divmod(remainder, 60)
     return f"{hours}h {minutes}m {seconds}s"
 
-
-@admin_bp.post("/admin/register")
-def admin_register():
-    data = request.get_json(silent=True) or {}
-    try:
-        admin = register_admin(data.get("username"), data.get("email"), data.get("password"))
-    except UserServiceError as exc:
-        return _service_error_response(exc)
-    return jsonify(build_success_response(admin, "管理员注册成功"))
 
 
 @admin_bp.post("/admin/login")
