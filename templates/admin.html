@@ -316,6 +316,22 @@
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
         }
+        .admin-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .admin-form-grid .full {
+            grid-column: 1 / -1;
+        }
+        .admin-user-tools {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .user-status-active { color: var(--green); }
+        .user-status-disabled { color: var(--red); }
     </style>
 </head>
 <body>
@@ -363,6 +379,10 @@
             <div class="admin-sidebar-item" onclick="switchTab('logs', this)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 错误日志
+            </div>
+            <div class="admin-sidebar-item" onclick="switchTab('users', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                用户管理
             </div>
         </nav>
 
@@ -474,6 +494,46 @@
                     </div>
                 </div>
             </section>
+
+            <section class="admin-section" id="tab-users" style="display:none;">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div class="admin-card-header-left">
+                            <h3>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                用户管理
+                            </h3>
+                            <span class="admin-card-desc" id="users-count">共 0 名用户</span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="loadUsers()">刷新</button>
+                    </div>
+                    <div class="admin-card-body">
+                        <form onsubmit="return createUser(event)">
+                            <div class="admin-form-grid">
+                                <input class="form-input" id="new-username" placeholder="用户名">
+                                <input class="form-input" id="new-email" placeholder="邮箱">
+                                <input class="form-input" id="new-password" type="password" placeholder="初始密码">
+                                <select class="form-input" id="new-status">
+                                    <option value="active">正常</option>
+                                    <option value="disabled">禁用</option>
+                                </select>
+                                <div class="full">
+                                    <button class="btn btn-primary btn-sm admin-btn-purple" type="submit">创建用户</button>
+                                </div>
+                            </div>
+                        </form>
+                        <div class="admin-table-wrap">
+                            <table class="admin-table" id="users-table">
+                                <thead>
+                                    <tr><th>#</th><th>用户名</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+                                </thead>
+                                <tbody id="users-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="admin-empty" id="users-empty" style="display:none;">暂无用户</div>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -495,6 +555,7 @@
             if (name === 'records') loadRecords();
             if (name === 'status') loadStatus();
             if (name === 'logs') loadLogs();
+            if (name === 'users') loadUsers();
         }
 
         function loadConfidence() {
@@ -615,6 +676,90 @@
         function deleteLog(id) {
             fetch('/api/admin/error-logs/' + id, {method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
                 if(d.code===0) loadLogs();
+            });
+        }
+
+        function loadUsers() {
+            fetch('/api/admin/users').then(function(r){return r.json()}).then(function(d){
+                if(d.code!==0) return;
+                var items = d.data.items || [];
+                document.getElementById('users-count').textContent = '共 ' + items.length + ' 名用户';
+                var tbody = document.getElementById('users-body');
+                var empty = document.getElementById('users-empty');
+                if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+                empty.style.display = 'none';
+                tbody.innerHTML = items.map(function(u, i){
+                    var status = u.status || 'active';
+                    return '<tr>' +
+                        '<td>' + (i + 1) + '</td>' +
+                        '<td>' + (u.username || '-') + '</td>' +
+                        '<td>' + (u.email || '-') + '</td>' +
+                        '<td><span class="user-status-' + status + '">' + (status === 'disabled' ? '禁用' : '正常') + '</span></td>' +
+                        '<td>' + (u.created_at || '-') + '</td>' +
+                        '<td><div class="admin-user-tools">' +
+                            '<button class="btn btn-ghost btn-sm" onclick="editUser(' + JSON.stringify(u.username) + ')">编辑</button>' +
+                            '<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(' + JSON.stringify(u.username) + ', ' + JSON.stringify(status) + ')">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
+                            '<button class="btn btn-ghost btn-sm" onclick="deleteUser(' + JSON.stringify(u.username) + ')">删除</button>' +
+                        '</div></td>' +
+                    '</tr>';
+                }).join('');
+            });
+        }
+
+        function createUser(e) {
+            e.preventDefault();
+            fetch('/api/admin/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('new-username').value.trim(),
+                    email: document.getElementById('new-email').value.trim(),
+                    password: document.getElementById('new-password').value,
+                    status: document.getElementById('new-status').value
+                })
+            }).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0){
+                    document.getElementById('new-username').value = '';
+                    document.getElementById('new-email').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('new-status').value = 'active';
+                    loadUsers();
+                } else {
+                    alert(d.message || '创建失败');
+                }
+            });
+            return false;
+        }
+
+        function editUser(username) {
+            var email = prompt('请输入新的邮箱');
+            if (email === null) return;
+            var password = prompt('请输入新密码（可留空）');
+            if (password === null) return;
+            fetch('/api/admin/users/' + encodeURIComponent(username), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email: email, password: password })
+            }).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0) loadUsers(); else alert(d.message || '更新失败');
+            });
+        }
+
+        function toggleUserStatus(username, status) {
+            var next = status === 'disabled' ? 'active' : 'disabled';
+            fetch('/api/admin/users/' + encodeURIComponent(username), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ status: next })
+            }).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0) loadUsers(); else alert(d.message || '更新失败');
+            });
+        }
+
+        function deleteUser(username) {
+            if (!confirm('确认删除该用户？')) return;
+            fetch('/api/admin/users/' + encodeURIComponent(username), { method: 'DELETE' }).then(function(r){return r.json()}).then(function(d){
+                if(d.code===0) loadUsers(); else alert(d.message || '删除失败');
             });
         }
 
