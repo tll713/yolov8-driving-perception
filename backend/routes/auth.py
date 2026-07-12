@@ -3,7 +3,6 @@ from flask import Blueprint, jsonify, request
 from backend.api_contract import build_error_response, build_success_response
 from backend.services.user_service import (
     UserServiceError,
-    authenticate_any,
     authenticate_user,
     get_user_profile,
     register_user,
@@ -45,7 +44,7 @@ def register():
 def login():
     data = request.get_json(silent=True) or {}
     try:
-        user = authenticate_any(data.get("username"), data.get("password"))
+        user = authenticate_user(data.get("username"), data.get("password"))
     except UserServiceError as exc:
         return _service_error_response(exc)
     return jsonify(build_success_response(user, "登录成功"))

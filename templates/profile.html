@@ -216,13 +216,11 @@
         }
 
         function loadDetectionCount() {
-            fetch('/api/detections/history')
+            fetch('/api/detections/history?username=' + encodeURIComponent(currentUser))
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.code === 0) {
-                        var items = (data.data.items || []).filter(function(item) {
-                            return item.username === currentUser || !item.username;
-                        });
+                        var items = data.data.items || [];
                         document.getElementById('view-detect-count').textContent = items.length;
                     }
                 })

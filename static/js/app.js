@@ -78,7 +78,8 @@ const app = createApp({
 
         async function fetchHistory() {
             try {
-                const res = await fetch('/api/detections/history')
+                const userQuery = currentUser.value ? `?username=${encodeURIComponent(currentUser.value)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0) {
                     dashboard.value = json.data.dashboard || {}
@@ -363,7 +364,8 @@ const app = createApp({
 
         async function onDownloadLog() {
             try {
-                const res = await fetch('/api/detections/history')
+                const userQuery = currentUser.value ? `?username=${encodeURIComponent(currentUser.value)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code !== 0 || !json.data.items?.length) {
                     alert('暂无历史记录可导出')
@@ -429,7 +431,11 @@ const app = createApp({
         }
 
         async function onClearHistory() {
-            await fetch('/api/detections/history/clear', { method: 'POST' })
+            await fetch('/api/detections/history/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: currentUser.value || '' }),
+            })
             await fetchHistory()
         }
 

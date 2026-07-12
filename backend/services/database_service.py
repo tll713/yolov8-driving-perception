@@ -96,27 +96,17 @@ def _object_payload(detection, image_height):
 
 
 def _get_user_id(cursor, username=None):
-    if username:
-        cursor.execute(
-            f"SELECT `编号` AS id FROM {USER_TABLE} WHERE `用户名` = %s LIMIT 1",
-            [username],
-        )
-        row = cursor.fetchone()
-        if row:
-            return row["id"]
-
+    username = (username or "").strip()
+    if not username:
+        raise RuntimeError("检测记录缺少登录用户名，无法关联到用户")
     cursor.execute(
-        f"""
-        SELECT `编号` AS id
-        FROM {USER_TABLE}
-        WHERE `用户角色` = 'user'
-        ORDER BY `编号` DESC
-        LIMIT 1
-        """
+        f"SELECT `编号` AS id FROM {USER_TABLE} WHERE `用户名` = %s LIMIT 1",
+        [username],
     )
     row = cursor.fetchone()
-    if not row:
-        raise RuntimeError("用户表中没有可关联的用户，请先注册或登录用户")
+    if row:
+        return row["id"]
+    raise RuntimeError("当前登录用户不存在，无法保存检测记录")
     return row["id"]
 
 
@@ -262,29 +252,38 @@ def save_detection_result(result):
         conn.close()
 
 
-def list_detection_history(limit=50):
+def list_detection_history(limit=50, username=None):
+    username = (username or "").strip()
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
+            params = {"limit": limit}
+            where_clause = ""
+            if username:
+                where_clause = f"WHERE u.`用户名` = %(username)s"
+                params["username"] = username
             cursor.execute(
                 f"""
                 SELECT
-                    `编号` AS id,
-                    `创建时间` AS created_at,
-                    `原始文件名` AS original_filename,
-                    `文件类型` AS file_type,
-                    `上传路径` AS upload_path,
-                    `结果路径` AS result_path,
-                    `模型名称` AS model_name,
-                    `置信度阈值` AS confidence_threshold,
-                    `目标总数` AS total_objects,
-                    `最高风险等级` AS max_risk_level,
-                    `推理耗时毫秒` AS inference_time_ms
-                FROM {RECORD_TABLE}
-                ORDER BY `编号` DESC
+                    r.`编号` AS id,
+                    r.`创建时间` AS created_at,
+                    r.`原始文件名` AS original_filename,
+                    r.`文件类型` AS file_type,
+                    r.`上传路径` AS upload_path,
+                    r.`结果路径` AS result_path,
+                    r.`模型名称` AS model_name,
+                    r.`置信度阈值` AS confidence_threshold,
+                    r.`目标总数` AS total_objects,
+                    r.`最高风险等级` AS max_risk_level,
+                    r.`推理耗时毫秒` AS inference_time_ms,
+                    u.`用户名` AS username
+                FROM {RECORD_TABLE} r
+                LEFT JOIN {USER_TABLE} u ON u.`编号` = r.`用户编号`
+                {where_clause}
+                ORDER BY r.`编号` DESC
                 LIMIT %(limit)s
                 """,
-                {"limit": limit},
+                params,
             )
             rows = cursor.fetchall()
             for row in rows:
@@ -296,6 +295,7 @@ def list_detection_history(limit=50):
         {
             "record_id": row.get("id"),
             "created_at": str(row.get("created_at") or ""),
+            "username": row.get("username") or "",
             "type": row.get("file_type"),
             "filename": row.get("original_filename"),
             "upload_path": row.get("upload_path"),
@@ -309,6 +309,53 @@ def list_detection_history(limit=50):
         }
         for row in rows
     ]
+
+
+def delete_detection_history(username=None):
+    username = (username or "").strip()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            params = {}
+            where_clause = ""
+            if username:
+                where_clause = f"WHERE u.`用户名` = %(username)s"
+                params["username"] = username
+
+            cursor.execute(
+                f"""
+                SELECT r.`编号` AS id
+                FROM {RECORD_TABLE} r
+                LEFT JOIN {USER_TABLE} u ON u.`编号` = r.`用户编号`
+                {where_clause}
+                """,
+                params,
+            )
+            record_ids = [row["id"] for row in cursor.fetchall()]
+            if not record_ids:
+                conn.commit()
+                return 0
+
+            placeholders = ", ".join(["%s"] * len(record_ids))
+            cursor.execute(
+                f"DELETE FROM {RISK_LOG_TABLE} WHERE `检测记录编号` IN ({placeholders})",
+                record_ids,
+            )
+            cursor.execute(
+                f"DELETE FROM {OBJECT_TABLE} WHERE `检测记录编号` IN ({placeholders})",
+                record_ids,
+            )
+            cursor.execute(
+                f"DELETE FROM {RECORD_TABLE} WHERE `编号` IN ({placeholders})",
+                record_ids,
+            )
+        conn.commit()
+        return len(record_ids)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _record_payload(row, detections=None):

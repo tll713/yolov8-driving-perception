@@ -181,8 +181,11 @@ def _db_find_by_username(conn, username, role=None):
 
 
 def _db_find_by_email(conn, email, role, exclude_id=None):
-    sql = f"{_select_account_sql()} WHERE {_col('email')} = %s AND {_col('role')} = %s"
-    params = [email, role]
+    sql = f"{_select_account_sql()} WHERE {_col('email')} = %s"
+    params = [email]
+    if role is not None:
+        sql += f" AND {_col('role')} = %s"
+        params.append(role)
     if exclude_id is not None:
         sql += f" AND {_col('id')} <> %s"
         params.append(exclude_id)
@@ -206,7 +209,7 @@ def _db_create_account(username, email, password, role, status="active"):
             message = "管理员用户名已存在" if role == "admin" else "用户名已存在"
             code = 2004 if role == "admin" else 1004
             raise UserServiceError(message, code)
-        if _db_find_by_email(conn, email, role):
+        if _db_find_by_email(conn, email, None):
             raise UserServiceError("邮箱已被注册", 1005)
 
         user = {
@@ -256,6 +259,12 @@ def _db_create_account(username, email, password, role, status="active"):
     except Exception as exc:
         if conn is not None:
             conn.rollback()
+        if getattr(exc, "args", [None])[0] == 1062:
+            message = str(exc)
+            if "邮箱" in message or "email" in message:
+                raise UserServiceError("邮箱已被注册", 1005) from exc
+            if "用户名" in message or "username" in message:
+                raise UserServiceError("用户名已存在", 1004) from exc
         raise _mysql_error(exc) from exc
     finally:
         if conn is not None:
@@ -333,7 +342,7 @@ def _db_update_user_profile(username, updates):
 
         if email is not None:
             email = _validate_email(email)
-            if _db_find_by_email(conn, email, "user", exclude_id=user.get("id")):
+            if _db_find_by_email(conn, email, None, exclude_id=user.get("id")):
                 raise UserServiceError("邮箱已被注册", 1005)
             fields["email"] = email
 
@@ -414,7 +423,7 @@ def _db_update_user_by_admin(username, updates):
 
         if email is not None:
             email = _validate_email(email)
-            if _db_find_by_email(conn, email, "user", exclude_id=user.get("id")):
+            if _db_find_by_email(conn, email, None, exclude_id=user.get("id")):
                 raise UserServiceError("邮箱已被注册", 1005)
             fields["email"] = email
 
@@ -455,6 +464,9 @@ def _db_delete_user_by_admin(username):
     username = (username or "").strip()
     conn = None
     try:
+        from backend.services.database_service import delete_detection_history
+
+        delete_detection_history(username=username)
         conn = get_connection()
         _ensure_user_table(conn)
         with conn.cursor() as cursor:
@@ -740,6 +752,14 @@ def authenticate_admin(username, password):
 
 
 def authenticate_any(username, password):
+    if _use_mysql():
+        try:
+            return _db_authenticate_account(username, password, "admin")
+        except UserServiceError as admin_error:
+            if admin_error.code not in {2006, 1007, 1010}:
+                raise
+        return _db_authenticate_account(username, password, "user")
+
     username = (username or "").strip()
     if not username or not password:
         raise UserServiceError("用户名和密码不能为空", 1006)

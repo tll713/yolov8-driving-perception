@@ -525,7 +525,7 @@
                             </h3>
                             <span class="admin-card-desc" id="users-count">共 0 名用户</span>
                         </div>
-                        <button class="btn btn-ghost btn-sm" onclick="loadUsers()">刷新</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="loadUsers()">刷新</button>
                         <div class="admin-search-bar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             <input type="text" id="user-search" class="form-input" placeholder="搜索用户名" oninput="filterUsers()">
@@ -561,7 +561,7 @@
         </main>
     </div>
 
-    <div class="login-modal-overlay" id="edit-modal" style="display:none;" @click.self="closeEditModal()">
+    <div class="login-modal-overlay" id="edit-modal" style="display:none;">
         <div class="login-modal-card" style="text-align:left;">
             <div class="login-modal-icon" style="margin:0 auto 16px;">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -579,8 +579,8 @@
                 <input class="form-input" id="edit-password-input" type="password" placeholder="输入新密码">
             </div>
             <div class="login-modal-actions" style="margin-top:24px;">
-                <button class="btn btn-primary admin-btn-purple" onclick="submitEditUser()">保存</button>
-                <button class="btn btn-ghost" onclick="closeEditModal()">取消</button>
+                <button class="btn btn-primary admin-btn-purple" type="button" onclick="submitEditUser()">保存</button>
+                <button class="btn btn-ghost" type="button" onclick="closeEditModal()">取消</button>
             </div>
         </div>
     </div>
@@ -743,22 +743,31 @@
                     '<td><span class="user-status-' + status + '">' + (status === 'disabled' ? '禁用' : '正常') + '</span></td>' +
                     '<td>' + (u.created_at || '-') + '</td>' +
                     '<td><div class="admin-user-tools">' +
-                        '<button class="btn btn-ghost btn-sm" onclick="editUser(' + JSON.stringify(u.username) + ')">编辑</button>' +
-                        '<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(' + JSON.stringify(u.username) + ', ' + JSON.stringify(status) + ')">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
-                        '<button class="btn btn-ghost btn-sm" onclick="deleteUser(' + JSON.stringify(u.username) + ')">删除</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" onclick="editUser(' + JSON.stringify(u.username) + ')">编辑</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" onclick="toggleUserStatus(' + JSON.stringify(u.username) + ', ' + JSON.stringify(status) + ')">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" onclick="deleteUser(' + JSON.stringify(u.username) + ')">删除</button>' +
                     '</div></td>' +
                 '</tr>';
             }).join('');
         }
 
+        function apiJson(url, options) {
+            return fetch(url, options || {}).then(function(r) {
+                return r.json().then(function(data) {
+                    if (!r.ok && data.code === 0) data.code = r.status;
+                    return data;
+                });
+            });
+        }
+
         function loadUsers() {
-            fetch('/api/admin/users').then(function(r){return r.json()}).then(function(d){
-                if(d.code!==0) return;
+            apiJson('/api/admin/users').then(function(d){
+                if(d.code!==0) { alert(d.message || '加载用户失败'); return; }
                 allUsers = d.data.items || [];
                 document.getElementById('users-count').textContent = '共 ' + allUsers.length + ' 名用户';
                 document.getElementById('user-search').value = '';
                 renderUsersList(allUsers);
-            });
+            }).catch(function(){ alert('加载用户失败，请检查后端服务是否启动'); });
         }
 
         function filterUsers() {
@@ -772,16 +781,24 @@
 
         function createUser(e) {
             e.preventDefault();
-            fetch('/api/admin/users', {
+            var username = document.getElementById('new-username').value.trim();
+            var email = document.getElementById('new-email').value.trim();
+            var password = document.getElementById('new-password').value;
+            var status = document.getElementById('new-status').value;
+            if (!username || !email || !password) {
+                alert('请填写用户名、邮箱和密码');
+                return false;
+            }
+            apiJson('/api/admin/users', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    username: document.getElementById('new-username').value.trim(),
-                    email: document.getElementById('new-email').value.trim(),
-                    password: document.getElementById('new-password').value,
-                    status: document.getElementById('new-status').value
+                    username: username,
+                    email: email,
+                    password: password,
+                    status: status
                 })
-            }).then(function(r){return r.json()}).then(function(d){
+            }).then(function(d){
                 if(d.code===0){
                     document.getElementById('new-username').value = '';
                     document.getElementById('new-email').value = '';
@@ -791,7 +808,7 @@
                 } else {
                     alert(d.message || '创建失败');
                 }
-            });
+            }).catch(function(){ alert('创建失败，请检查后端服务是否启动'); });
             return false;
         }
 
@@ -799,7 +816,7 @@
 
         function editUser(username) {
             var user = allUsers.find(function(u) { return u.username === username; });
-            if (!user) return;
+            if (!user) { alert('用户数据未加载，请先点击刷新'); return; }
             editingUsername = username;
             document.getElementById('edit-username-display').textContent = username;
             document.getElementById('edit-email-input').value = user.email || '';
@@ -816,35 +833,45 @@
             if (!editingUsername) return;
             var email = document.getElementById('edit-email-input').value.trim();
             var password = document.getElementById('edit-password-input').value;
+            if (!email) { alert('邮箱不能为空'); return; }
             var body = { email: email };
             if (password) body.password = password;
-            fetch('/api/admin/users/' + encodeURIComponent(editingUsername), {
+            apiJson('/api/admin/users/' + encodeURIComponent(editingUsername), {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
-            }).then(function(r){return r.json()}).then(function(d){
+            }).then(function(d){
                 if(d.code===0) { closeEditModal(); loadUsers(); }
                 else alert(d.message || '更新失败');
-            });
+            }).catch(function(){ alert('更新失败，请检查后端服务是否启动'); });
         }
 
         function toggleUserStatus(username, status) {
             var next = status === 'disabled' ? 'active' : 'disabled';
-            fetch('/api/admin/users/' + encodeURIComponent(username), {
+            apiJson('/api/admin/users/' + encodeURIComponent(username), {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ status: next })
-            }).then(function(r){return r.json()}).then(function(d){
+            }).then(function(d){
                 if(d.code===0) loadUsers(); else alert(d.message || '更新失败');
-            });
+            }).catch(function(){ alert('更新失败，请检查后端服务是否启动'); });
         }
 
         function deleteUser(username) {
             if (!confirm('确认删除该用户？')) return;
-            fetch('/api/admin/users/' + encodeURIComponent(username), { method: 'DELETE' }).then(function(r){return r.json()}).then(function(d){
+            apiJson('/api/admin/users/' + encodeURIComponent(username), { method: 'DELETE' }).then(function(d){
                 if(d.code===0) loadUsers(); else alert(d.message || '删除失败');
-            });
+            }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
         }
+
+        window.loadUsers = loadUsers;
+        window.filterUsers = filterUsers;
+        window.createUser = createUser;
+        window.editUser = editUser;
+        window.closeEditModal = closeEditModal;
+        window.submitEditUser = submitEditUser;
+        window.toggleUserStatus = toggleUserStatus;
+        window.deleteUser = deleteUser;
 
         loadConfidence();
     </script>

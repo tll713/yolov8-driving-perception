@@ -504,7 +504,9 @@ const RiskAnalysisPanel = {
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
         async loadHistory() {
             try {
-                const res = await fetch('/api/detections/history')
+                const currentUser = localStorage.getItem('currentUser') || ''
+                const userQuery = currentUser ? `?username=${encodeURIComponent(currentUser)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0 && json.data.items?.length) {
                     this.historyItems = json.data.items
@@ -2029,7 +2031,9 @@ const HistoryPanel = {
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
         async loadFullHistory() {
             try {
-                const res = await fetch('/api/detections/history')
+                const currentUser = localStorage.getItem('currentUser') || ''
+                const userQuery = currentUser ? `?username=${encodeURIComponent(currentUser)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0 && json.data.items?.length) {
                     this.allItems = json.data.items

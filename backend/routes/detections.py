@@ -92,13 +92,16 @@ def video_detection_job_status_endpoint(job_id):
 
 @detections_bp.get("/detections/history")
 def detection_history():
-    items = list_history()
+    username = (request.args.get("username") or "").strip()
+    items = list_history(username=username or None)
     return jsonify(build_success_response({"items": items, "dashboard": build_dashboard(items)}))
 
 
 @detections_bp.post("/detections/history/clear")
 def clear_detection_history():
-    clear_history()
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or request.args.get("username") or "").strip()
+    clear_history(username=username or None)
     return jsonify(build_success_response({"cleared": True}))
 
 
