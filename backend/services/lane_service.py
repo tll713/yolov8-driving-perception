@@ -18,6 +18,9 @@ def _empty_lane_analysis(width=0, height=0):
     }
 
 
+VEHICLE_CLASSES = {"car", "bus", "truck"}
+
+
 def _average_line(lines):
     if not lines:
         return None
@@ -97,6 +100,9 @@ def apply_driving_advice(lane_analysis, detections, image_width):
     close_targets = []
 
     for item in detections:
+        if item.get("class_name") not in VEHICLE_CLASSES:
+            continue
+
         risk = item.get("risk", {})
         distance_score = item.get("distance_score") or risk.get("distance_score") or 0
         lane_overlap = item.get("lane_overlap") or risk.get("lane_overlap") or 0
@@ -105,16 +111,28 @@ def apply_driving_advice(lane_analysis, detections, image_width):
         if center_x is None:
             center_x = (bbox[0] + bbox[2]) / 2
 
-        if distance_score >= 62 and lane_overlap >= 0.12:
-            close_targets.append({**item, "center_x": center_x, "distance_score": distance_score})
+        x1, _, x2, _ = bbox
+        is_left_front = center_x < image_width * 0.47 and x2 >= image_width * 0.34
+        is_right_front = center_x > image_width * 0.53 and x1 <= image_width * 0.66
+        is_center_front = image_width * 0.42 <= center_x <= image_width * 0.58
+        is_close = distance_score >= 66 or risk.get("level") == "high"
+        is_path_relevant = lane_overlap >= 0.18 or is_center_front
 
-    left_targets = [item for item in close_targets if item["center_x"] < image_width * 0.47]
-    right_targets = [item for item in close_targets if item["center_x"] > image_width * 0.53]
-    center_targets = [
-        item
-        for item in close_targets
-        if image_width * 0.47 <= item["center_x"] <= image_width * 0.53
-    ]
+        if is_close and is_path_relevant and (is_left_front or is_right_front or is_center_front):
+            close_targets.append(
+                {
+                    **item,
+                    "center_x": center_x,
+                    "distance_score": distance_score,
+                    "is_left_front": is_left_front,
+                    "is_right_front": is_right_front,
+                    "is_center_front": is_center_front,
+                }
+            )
+
+    left_targets = [item for item in close_targets if item["is_left_front"]]
+    right_targets = [item for item in close_targets if item["is_right_front"]]
+    center_targets = [item for item in close_targets if item["is_center_front"]]
 
     if left_targets and not right_targets:
         lane.update(

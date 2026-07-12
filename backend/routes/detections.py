@@ -20,7 +20,11 @@ def detect_image_endpoint():
 
     try:
         confidence = float(request.form.get("confidence", DEFAULT_CONFIDENCE))
-        result = detect_uploaded_image(upload, confidence=confidence)
+        result = detect_uploaded_image(
+            upload,
+            confidence=confidence,
+            username=request.form.get("username"),
+        )
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
@@ -39,7 +43,11 @@ def detect_video_endpoint():
 
     try:
         confidence = float(request.form.get("confidence", DEFAULT_CONFIDENCE))
-        result = detect_uploaded_video(upload, confidence=confidence)
+        result = detect_uploaded_video(
+            upload,
+            confidence=confidence,
+            username=request.form.get("username"),
+        )
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
@@ -58,7 +66,11 @@ def create_video_detection_job_endpoint():
 
     try:
         confidence = float(request.form.get("confidence", DEFAULT_CONFIDENCE))
-        job = start_video_detection_job(upload, confidence=confidence)
+        job = start_video_detection_job(
+            upload,
+            confidence=confidence,
+            username=request.form.get("username"),
+        )
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:

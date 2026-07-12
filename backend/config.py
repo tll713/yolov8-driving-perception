@@ -36,6 +36,8 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "admin")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "yolov8_driving")
+USER_STORAGE = os.getenv("USER_STORAGE", "mysql").strip().lower()
+USER_TABLE_NAME = os.getenv("USER_TABLE_NAME", "用户表").strip()
 
 
 def ensure_runtime_directories():

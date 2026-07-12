@@ -22,9 +22,9 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.connection.statements.append((sql, params))
-        if sql.strip().upper().startswith("INSERT INTO DETECTION_RECORD"):
+        if "INSERT INTO `检测记录表`" in sql:
             self.lastrowid = 101
-        elif sql.strip().upper().startswith("INSERT INTO DETECTED_OBJECT"):
+        elif "INSERT INTO `检测目标表`" in sql:
             self.lastrowid = 200 + self.connection.object_insert_count
             self.connection.object_insert_count += 1
 
@@ -125,11 +125,15 @@ class DatabaseServiceTest(unittest.TestCase):
         self.assertTrue(connection.committed)
         self.assertTrue(connection.closed)
         sql_text = "\n".join(sql for sql, _ in connection.statements)
-        self.assertIn("INSERT INTO detection_record", sql_text)
-        self.assertEqual(sql_text.count("INSERT INTO detected_object"), 2)
-        self.assertEqual(sql_text.count("INSERT INTO risk_log"), 1)
+        self.assertIn("INSERT INTO `检测记录表`", sql_text)
+        self.assertEqual(sql_text.count("INSERT INTO `检测目标表`"), 2)
+        self.assertEqual(sql_text.count("INSERT INTO `风险日志表`"), 1)
 
-        object_params = connection.statements[1][1]
+        object_params = next(
+            params
+            for sql, params in connection.statements
+            if "INSERT INTO `检测目标表`" in sql
+        )
         self.assertEqual(object_params["class_name_cn"], "行人")
         self.assertEqual(object_params["bbox_area"], 44200)
         self.assertEqual(object_params["center_x"], 585)
