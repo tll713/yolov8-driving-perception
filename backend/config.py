@@ -19,6 +19,7 @@ MODEL_DIR = BASE_DIR / "models"
 DEFAULT_MODEL_PATH = MODEL_DIR / "yolov8s.pt"
 HISTORY_FILE = LOG_DIR / "detection_history.json"
 SIMULATION_SCENARIO_FILE = LOG_DIR / "simulation_scenarios.json"
+USER_FILE = LOG_DIR / "users.json"
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
