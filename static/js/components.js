@@ -2058,10 +2058,11 @@ const HistoryPanel = {
         mediaUrl(item) {
             if (this.isImage(item) && item.result_filename) return '/results/' + item.result_filename
             if (this.isVideo(item) && item.result_video) return item.result_video
+            if (item.result_path) return '/results/' + String(item.result_path).split(/[\\/]/).pop()
             return ''
         },
         viewMedia(item) {
-            if (this.mediaUrl(item)) this.viewItem = item
+            this.viewItem = item
         },
         closeView() {
             this.viewItem = null
@@ -2141,9 +2142,9 @@ const HistoryPanel = {
                             <span class="ph-filename">{{ item.original_filename || item.filename || '-' }}</span>
                             <span class="ph-counts">{{ item.count || item.total_objects || 0 }} 个目标</span>
                             <span :class="riskClass(overallRisk(item))">{{ riskLabel(overallRisk(item)) }}</span>
-                            <div class="ph-actions" v-if="mediaUrl(item)">
+                            <div class="ph-actions">
                                 <button class="btn btn-ghost btn-sm" @click="viewMedia(item)">查看</button>
-                                <button class="btn btn-ghost btn-sm" @click="downloadMedia(item)">下载</button>
+                                <button class="btn btn-ghost btn-sm" v-if="mediaUrl(item)" @click="downloadMedia(item)">下载</button>
                             </div>
                         </div>
                     </div>
@@ -2162,14 +2163,30 @@ const HistoryPanel = {
                     </div>
                 </div>
                 <div class="ph-modal-body">
-                    <img v-if="isImage(viewItem) && viewItem.result_filename" :src="'/results/' + viewItem.result_filename" class="ph-modal-media" alt="">
-                    <div v-else-if="isVideo(viewItem) && viewItem.result_video" class="ph-modal-video-wrap" @click="toggleModalVideo">
-                        <video :src="viewItem.result_video" class="ph-modal-media ph-modal-video" @play="onModalVideoPlay" @pause="onModalVideoPause" @ended="onModalVideoEnded" @timeupdate="onModalVideoTimeUpdate"></video>
+                    <img v-if="isImage(viewItem) && mediaUrl(viewItem)" :src="mediaUrl(viewItem)" class="ph-modal-media" alt="">
+                    <div v-else-if="isVideo(viewItem) && mediaUrl(viewItem)" class="ph-modal-video-wrap" @click="toggleModalVideo">
+                        <video :src="mediaUrl(viewItem)" class="ph-modal-media ph-modal-video" controls @play="onModalVideoPlay" @pause="onModalVideoPause" @ended="onModalVideoEnded" @timeupdate="onModalVideoTimeUpdate"></video>
                         <div class="ph-modal-play-btn" v-if="!modalVideoPlaying">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><polygon points="6 3 20 12 6 21 6 3"/></svg>
                         </div>
                         <div class="ph-modal-progress-bar" @click.stop="seekModalVideo">
                             <div class="ph-modal-progress-fill" :style="{ width: modalVideoProgress + '%' }"></div>
+                        </div>
+                    </div>
+                    <div v-else class="empty-block">暂无可预览的结果文件</div>
+                </div>
+                <div style="padding:0 16px 16px;">
+                    <div class="metric-row">
+                        <span>检测时间 {{ formatTime(viewItem.created_at) }}</span>
+                        <span>目标数 {{ viewItem.count || viewItem.total_objects || 0 }}</span>
+                        <span :class="riskClass(overallRisk(viewItem))">{{ riskLabel(overallRisk(viewItem)) }}</span>
+                    </div>
+                    <div v-if="viewItem.detections?.length" class="risk-det-sub" style="margin-top:12px;">
+                        <div class="risk-det-item" v-for="(d, di) in viewItem.detections" :key="di">
+                            <strong>{{ d.class_name_cn || d.class_name }}</strong>
+                            <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
+                            <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
+                            <span class="risk-det-reason">{{ d.risk?.message || d.risk?.reason || d.risk_reason || '' }}</span>
                         </div>
                     </div>
                 </div>

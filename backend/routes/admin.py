@@ -1,11 +1,10 @@
-import json
 import platform
 import time
 
 from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
-from backend.config import HISTORY_FILE
+from backend.services.database_service import delete_detection_record, get_detection_result
 from backend.services.history_service import list_history
 from backend.services.user_service import (
     UserServiceError,
@@ -139,22 +138,32 @@ def set_confidence():
 
 @admin_bp.get("/admin/records")
 def get_all_records():
-    records = list_history()
+    username = (request.args.get("username") or "").strip()
+    records = list_history(username=username or None)
     return jsonify(build_success_response({"items": records, "total": len(records)}))
+
+
+@admin_bp.get("/admin/records/<int:record_id>")
+def get_record(record_id):
+    try:
+        record = get_detection_result(record_id)
+    except Exception as exc:
+        return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
+
+    if record is None:
+        return jsonify(build_error_response("记录不存在", 2020)), 404
+    return jsonify(build_success_response(record))
 
 
 @admin_bp.delete("/admin/records/<int:record_id>")
 def delete_record(record_id):
-    records = list_history()
-    if record_id < 0 or record_id >= len(records):
-        return jsonify(build_error_response("记录不存在", 2020)), 404
+    try:
+        deleted = delete_detection_record(record_id)
+    except Exception as exc:
+        return jsonify(build_error_response(f"删除检测记录失败：{exc}", 500)), 500
 
-    records.pop(record_id)
-    HISTORY_FILE.parent.mkdir(exist_ok=True)
-    HISTORY_FILE.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if not deleted:
+        return jsonify(build_error_response("记录不存在", 2020)), 404
     return jsonify(build_success_response(None, "记录已删除"))
 
 

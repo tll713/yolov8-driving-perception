@@ -305,8 +305,8 @@ def list_detection_history(limit=50, username=None):
             "count": _to_int(row.get("total_objects")),
             "max_risk_level": row.get("max_risk_level"),
             "inference_time_ms": _to_int(row.get("inference_time_ms")),
-            "username": row.get("username") or "",
             "detections": row.get("detections") or [],
+            **_result_media_fields(row),
         }
         for row in rows
     ]
@@ -359,6 +359,53 @@ def delete_detection_history(username=None):
         conn.close()
 
 
+def delete_detection_record(record_id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT `编号` AS id FROM {RECORD_TABLE} WHERE `编号` = %s",
+                [record_id],
+            )
+            if cursor.fetchone() is None:
+                conn.commit()
+                return False
+
+            cursor.execute(
+                f"DELETE FROM {RISK_LOG_TABLE} WHERE `检测记录编号` = %s",
+                [record_id],
+            )
+            cursor.execute(
+                f"DELETE FROM {OBJECT_TABLE} WHERE `检测记录编号` = %s",
+                [record_id],
+            )
+            cursor.execute(
+                f"DELETE FROM {RECORD_TABLE} WHERE `编号` = %s",
+                [record_id],
+            )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _result_media_fields(row):
+    from pathlib import PureWindowsPath
+
+    result_path = row.get("result_path") or ""
+    if not result_path:
+        return {}
+    filename = PureWindowsPath(result_path).name
+    lower = filename.lower()
+    fields = {"result_filename": filename}
+    if lower.endswith((".mp4", ".avi", ".mov", ".mkv", ".webm")):
+        fields["result_video"] = f"/results/{filename}"
+    return fields
+
+
 def _record_payload(row, detections=None):
     return {
         "record_id": row.get("id"),
@@ -375,6 +422,7 @@ def _record_payload(row, detections=None):
         "max_risk_level": row.get("max_risk_level"),
         "inference_time_ms": _to_int(row.get("inference_time_ms")),
         "detections": detections or [],
+        **_result_media_fields(row),
     }
 
 
