@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend.api_contract import API_ENDPOINTS, build_success_response
+from backend.api_contract import API_ENDPOINTS, build_error_response, build_success_response
 from backend.config import (
     APP_LOG_FILE,
     LOG_BACKUP_COUNT,
@@ -105,7 +105,22 @@ def create_app():
     # ---- 全局错误处理器 ----
     @app.errorhandler(404)
     def handle_404(exc):
-        return jsonify(build_error_response("请求的资源不存在", 404)), 404
+        try:
+            from backend.services.error_log_service import log_error
+
+            log_error(
+                level="WARN",
+                source="flask_global",
+                error_type="NotFound",
+                message=f"请求的接口不存在：{request.method} {request.path}",
+                request_path=request.path,
+                request_method=request.method,
+                username="",
+                status_code=404,
+            )
+        except Exception:
+            pass
+        return jsonify(build_error_response(f"请求的资源不存在（{request.method} {request.path}）", 404)), 404
 
     @app.errorhandler(500)
     def handle_500(exc):
@@ -125,7 +140,7 @@ def create_app():
             )
         except Exception:
             pass
-        return jsonify(build_error_response("服务器内部错误", 500)), 500
+        return jsonify(build_error_response("服务器内部错误，请联系管理员查看错误日志", 500)), 500
 
     @app.errorhandler(Exception)
     def handle_exception(exc):
@@ -149,7 +164,19 @@ def create_app():
             )
         except Exception:
             pass
-        return jsonify(build_error_response(str(exc), status_code)), status_code
+        # 对常见异常给出更清晰的中文提示
+        exc_msg = str(exc)
+        if "model" in exc_msg.lower() or "模型" in exc_msg:
+            friendly_msg = f"AI 模型服务异常，请联系管理员检查模型文件：{exc_msg}"
+        elif "database" in exc_msg.lower() or "mysql" in exc_msg.lower() or "数据库" in exc_msg:
+            friendly_msg = f"数据库服务异常，请检查数据库连接：{exc_msg}"
+        elif "memory" in exc_msg.lower() or "内存" in exc_msg:
+            friendly_msg = f"服务器资源不足，请稍后重试：{exc_msg}"
+        elif "timeout" in exc_msg.lower() or "超时" in exc_msg:
+            friendly_msg = f"请求处理超时，请稍后重试：{exc_msg}"
+        else:
+            friendly_msg = f"服务异常（{type(exc).__name__}）：{exc_msg}"
+        return jsonify(build_error_response(friendly_msg, status_code)), status_code
 
     @app.after_request
     def add_cors_headers(response):
