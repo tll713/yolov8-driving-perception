@@ -139,7 +139,10 @@ def set_confidence():
 @admin_bp.get("/admin/records")
 def get_all_records():
     username = (request.args.get("username") or "").strip()
-    records = list_history(username=username or None)
+    try:
+        records = list_history(username=username or None)
+    except Exception as exc:
+        return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
     return jsonify(build_success_response({"items": records, "total": len(records)}))
 
 

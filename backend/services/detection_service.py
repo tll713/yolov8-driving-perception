@@ -15,7 +15,6 @@ from backend.services.demo_analysis_service import (
     build_safety_advice,
     build_scene_summary,
 )
-from backend.services.history_service import append_history
 from backend.services.lane_service import analyze_lane_image, apply_driving_advice
 from backend.services.model_service import get_model
 from backend.services.result_renderer import render_detection_image
@@ -53,8 +52,9 @@ def _build_demo_fields(detections):
 def _save_to_database(result):
     try:
         result["record_id"] = save_detection_result(result)
-    except Exception:
+    except Exception as exc:
         result["database_saved"] = False
+        raise RuntimeError(f"检测结果保存到 MySQL 失败：{exc}") from exc
     else:
         result["database_saved"] = True
 
@@ -109,7 +109,6 @@ def detect_uploaded_image(upload, confidence=0.5, username=None):
         "detections": detections,
     }
     _save_to_database(result)
-    append_history(result)
     return result
 
 
@@ -267,5 +266,4 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
         "detections": all_detections,
     }
     _save_to_database(result)
-    append_history(result)
     return result

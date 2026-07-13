@@ -93,7 +93,10 @@ def video_detection_job_status_endpoint(job_id):
 @detections_bp.get("/detections/history")
 def detection_history():
     username = (request.args.get("username") or "").strip()
-    items = list_history(username=username or None)
+    try:
+        items = list_history(username=username or None)
+    except Exception as exc:
+        return jsonify(build_error_response(f"查询检测历史失败：{exc}", 500)), 500
     return jsonify(build_success_response({"items": items, "dashboard": build_dashboard(items)}))
 
 
@@ -101,7 +104,10 @@ def detection_history():
 def clear_detection_history():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or request.args.get("username") or "").strip()
-    clear_history(username=username or None)
+    try:
+        clear_history(username=username or None)
+    except Exception as exc:
+        return jsonify(build_error_response(f"清空检测历史失败：{exc}", 500)), 500
     return jsonify(build_success_response({"cleared": True}))
 
 
