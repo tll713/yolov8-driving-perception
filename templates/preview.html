@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>预览历史记录 - 自动驾驶目标检测与风险提示系统</title>
+    <title>预览历史记录 - 自动驾驶感知与仿真系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -68,6 +68,13 @@
     </div>
 
     <script>
+        const currentUser = localStorage.getItem('currentUser') || '';
+        if (!currentUser) window.location.href = '/login';
+
+        function historyUrl() {
+            return '/api/detections/history?username=' + encodeURIComponent(currentUser);
+        }
+
         const RISK_MAP = {
             high: { label: '高风险', cls: 'risk-high', color: '#ef4444' },
             medium: { label: '中风险', cls: 'risk-medium', color: '#f59e0b' },
@@ -101,7 +108,7 @@
         async function loadHistory() {
             const container = document.getElementById('preview-content');
             try {
-                const res = await fetch('/api/detections/history');
+                const res = await fetch(historyUrl());
                 const json = await res.json();
                 if (json.code !== 0 || !json.data.items?.length) {
                     container.innerHTML = '<div class="history-empty-page">暂无检测记录</div>';
@@ -208,7 +215,7 @@
         }
 
         function downloadHistory() {
-            window.open('/api/detections/history', '_blank');
+            window.open(historyUrl(), '_blank');
         }
 
         loadHistory();

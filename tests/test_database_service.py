@@ -22,9 +22,9 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.connection.statements.append((sql, params))
-        if sql.strip().upper().startswith("INSERT INTO DETECTION_RECORD"):
+        if "INSERT INTO `检测记录表`" in sql:
             self.lastrowid = 101
-        elif sql.strip().upper().startswith("INSERT INTO DETECTED_OBJECT"):
+        elif "INSERT INTO `检测目标表`" in sql:
             self.lastrowid = 200 + self.connection.object_insert_count
             self.connection.object_insert_count += 1
 
@@ -87,6 +87,7 @@ class DatabaseServiceTest(unittest.TestCase):
         connection = FakeConnection()
         result = {
             "type": "image",
+            "username": "liu",
             "original_filename": "road_001.jpg",
             "filename": "road_001.jpg",
             "upload_path": "uploads/road_001.jpg",
@@ -125,16 +126,56 @@ class DatabaseServiceTest(unittest.TestCase):
         self.assertTrue(connection.committed)
         self.assertTrue(connection.closed)
         sql_text = "\n".join(sql for sql, _ in connection.statements)
-        self.assertIn("INSERT INTO detection_record", sql_text)
-        self.assertEqual(sql_text.count("INSERT INTO detected_object"), 2)
-        self.assertEqual(sql_text.count("INSERT INTO risk_log"), 1)
+        self.assertIn("INSERT INTO `检测记录表`", sql_text)
+        self.assertEqual(sql_text.count("INSERT INTO `检测目标表`"), 2)
+        self.assertEqual(sql_text.count("INSERT INTO `风险日志表`"), 1)
 
-        object_params = connection.statements[1][1]
+        object_params = next(
+            params
+            for sql, params in connection.statements
+            if "INSERT INTO `检测目标表`" in sql
+        )
         self.assertEqual(object_params["class_name_cn"], "行人")
         self.assertEqual(object_params["bbox_area"], 44200)
         self.assertEqual(object_params["center_x"], 585)
         self.assertEqual(object_params["center_y"], 530)
         self.assertEqual(object_params["risk_reason"], "检测到 person，且目标中心位于画面下半部分")
+
+    def test_save_detection_result_deduplicates_risk_logs_by_class_level_and_reason(self):
+        connection = FakeConnection()
+        result = {
+            "type": "image",
+            "username": "liu",
+            "original_filename": "road_001.jpg",
+            "filename": "road_001.jpg",
+            "upload_path": "uploads/road_001.jpg",
+            "result_path": "",
+            "model_name": "yolov8s",
+            "confidence": 0.5,
+            "image_width": 1280,
+            "image_height": 720,
+            "inference_time_ms": 85,
+            "detections": [
+                {
+                    "class_name": "car",
+                    "confidence": 0.5,
+                    "bbox": [520, 360, 650, 700],
+                    "risk": {"level": "medium", "message": "中风险"},
+                },
+                {
+                    "class_name": "car",
+                    "confidence": 0.9,
+                    "bbox": [530, 360, 660, 700],
+                    "risk": {"level": "medium", "message": "中风险"},
+                },
+            ],
+        }
+
+        with patch("backend.services.database_service.get_connection", return_value=connection):
+            save_detection_result(result)
+
+        sql_text = "\n".join(sql for sql, _ in connection.statements)
+        self.assertEqual(sql_text.count("INSERT INTO `风险日志表`"), 1)
 
     def test_list_detection_history_returns_recent_records(self):
         connection = FakeConnection()

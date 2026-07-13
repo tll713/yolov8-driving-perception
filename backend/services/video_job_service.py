@@ -1,8 +1,10 @@
 from copy import deepcopy
 from threading import Lock, Thread
+import traceback
 from uuid import uuid4
 
 from backend.config import ALLOWED_VIDEO_EXTENSIONS, DEFAULT_CONFIDENCE, RESULT_DIR, UPLOAD_DIR
+from backend.services.error_log_service import log_error
 from backend.services.detection_service import (
     _validate_confidence,
     _validate_file,
@@ -25,7 +27,7 @@ def get_video_detection_job(job_id):
     return _job_snapshot(job_id)
 
 
-def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE):
+def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE, username=None):
     _validate_file(upload, ALLOWED_VIDEO_EXTENSIONS, "视频")
     confidence = _validate_confidence(confidence)
     original_filename = upload.filename
@@ -47,14 +49,14 @@ def start_video_detection_job(upload, confidence=DEFAULT_CONFIDENCE):
 
     thread = Thread(
         target=_run_video_detection_job,
-        args=(job_id, upload_path, original_filename, confidence),
+        args=(job_id, upload_path, original_filename, confidence, username),
         daemon=True,
     )
     thread.start()
     return _job_snapshot(job_id)
 
 
-def _run_video_detection_job(job_id, upload_path, original_filename, confidence):
+def _run_video_detection_job(job_id, upload_path, original_filename, confidence, username=None):
     import cv2
 
     def publish_progress(payload):
@@ -70,6 +72,9 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
             "image_height": payload["image_height"],
             "detections": payload["detections"],
             "lane_analysis": payload.get("lane_analysis"),
+            "max_risk_level": payload.get("frame_max_risk_level", "low"),
+            "max_risk_score": payload.get("frame_max_risk_score", 0),
+            "risk_counts": payload.get("frame_risk_counts", {}),
         }
 
         with _LOCK:
@@ -90,6 +95,9 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
                         "result_filename": frame_filename,
                         "detections": payload["detections"],
                         "lane_analysis": payload.get("lane_analysis"),
+                        "max_risk_level": payload.get("frame_max_risk_level", "low"),
+                        "max_risk_score": payload.get("frame_max_risk_score", 0),
+                        "risk_counts": payload.get("frame_risk_counts", {}),
                     },
                     "lane_analysis": payload.get("lane_analysis"),
                     "detections": payload["all_detections"],
@@ -113,8 +121,18 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence)
             original_filename,
             confidence=confidence,
             progress_callback=publish_progress,
+            username=username,
         )
     except Exception as exc:
+        log_error(
+            level="ERROR",
+            source="video_detection_job",
+            error_type=type(exc).__name__,
+            message=f"{original_filename}: {exc}",
+            username=(username or "").strip(),
+            status_code=500,
+            stack_trace=traceback.format_exc(),
+        )
         with _LOCK:
             _JOBS[job_id].update({"status": "failed", "progress": 100, "error": str(exc)})
         return

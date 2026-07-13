@@ -89,7 +89,7 @@
             justify-content: space-between;
             padding: 16px 22px;
             border-bottom: 1px solid var(--border);
-            background: rgba(255,255,255,0.02);
+            background: rgba(0,0,0,0.02);
         }
         .admin-card-header-left {
             display: flex;
@@ -210,7 +210,7 @@
             text-transform: uppercase;
             letter-spacing: 0.06em;
             border-bottom: 1px solid var(--border);
-            background: rgba(255,255,255,0.02);
+            background: rgba(0,0,0,0.02);
             white-space: nowrap;
         }
         .admin-table td {
@@ -221,7 +221,7 @@
             font-family: 'JetBrains Mono', monospace;
         }
         .admin-table tr:hover td {
-            background: rgba(255,255,255,0.02);
+            background: rgba(0,0,0,0.02);
         }
         .admin-table tr:last-child td {
             border-bottom: none;
@@ -233,7 +233,7 @@
             gap: 16px;
         }
         .status-item {
-            background: rgba(255,255,255,0.02);
+            background: rgba(0,0,0,0.02);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             padding: 16px 18px;
@@ -306,7 +306,7 @@
             align-items: center;
             gap: 6px;
             padding: 6px 14px;
-            background: rgba(255,255,255,0.03);
+            background: rgba(0,0,0,0.03);
             border: 1px solid var(--border);
             border-radius: 20px;
             font-size: 0.78rem;
@@ -316,6 +316,82 @@
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
         }
+        .admin-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .admin-form-grid .full {
+            grid-column: 1 / -1;
+        }
+        .admin-user-tools {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .user-status-active { color: var(--green); }
+        .user-status-disabled { color: var(--red); }
+
+        .admin-search-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0 10px;
+            transition: border-color 0.2s ease;
+        }
+        .admin-search-bar:focus-within { border-color: var(--accent); }
+        .admin-search-bar svg { flex-shrink: 0; color: var(--text-muted); }
+        .admin-search-bar .form-input {
+            border: none;
+            background: transparent;
+            padding: 7px 0;
+            box-shadow: none;
+        }
+        .admin-search-bar .form-input:focus { border-color: transparent; }
+        .admin-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .admin-detail-grid div {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            background: rgba(0,0,0,0.02);
+        }
+        .admin-detail-grid span {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .admin-detail-media {
+            width: 100%;
+            max-height: 45vh;
+            border-radius: var(--radius-sm);
+            margin: 10px 0;
+            background: #111827;
+        }
+        .admin-detail-list {
+            max-height: 220px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+        .admin-detail-row {
+            display: grid;
+            grid-template-columns: 1.5fr 0.8fr 0.8fr 2fr;
+            gap: 8px;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.78rem;
+        }
+        .admin-detail-row:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -339,7 +415,7 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     <span id="admin-name">管理员</span>
                 </div>
-                <a href="/" class="btn btn-ghost btn-sm">返回首页</a>
+
                 <button class="btn btn-ghost btn-sm" onclick="handleLogout()">退出</button>
             </div>
         </div>
@@ -363,6 +439,10 @@
             <div class="admin-sidebar-item" onclick="switchTab('logs', this)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 错误日志
+            </div>
+            <div class="admin-sidebar-item" onclick="switchTab('users', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                用户管理
             </div>
         </nav>
 
@@ -413,13 +493,13 @@
                             </h3>
                             <span class="admin-card-desc" id="records-count">共 0 条记录</span>
                         </div>
-                        <button class="btn btn-ghost btn-sm" onclick="loadRecords()">刷新</button>
+                        <button class="btn btn-ghost btn-sm" type="button" data-admin-action="refresh-records">刷新</button>
                     </div>
                     <div class="admin-card-body" style="padding:0;">
                         <div class="admin-table-wrap">
                             <table class="admin-table" id="records-table">
                                 <thead>
-                                    <tr><th>#</th><th>检测时间</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
+                                    <tr><th>#</th><th>检测时间</th><th>用户</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
                                 </thead>
                                 <tbody id="records-body"></tbody>
                             </table>
@@ -474,17 +554,95 @@
                     </div>
                 </div>
             </section>
+
+            <section class="admin-section" id="tab-users" style="display:none;">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div class="admin-card-header-left">
+                            <h3>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                用户管理
+                            </h3>
+                            <span class="admin-card-desc" id="users-count">共 0 名用户</span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="loadUsers()">刷新</button>
+                        <div class="admin-search-bar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" id="user-search" class="form-input" placeholder="搜索用户名" oninput="filterUsers()">
+                        </div>
+                    </div>
+                    <div class="admin-card-body">
+                        <form onsubmit="return createUser(event)">
+                            <div class="admin-form-grid">
+                                <input class="form-input" id="new-username" placeholder="用户名">
+                                <input class="form-input" id="new-email" placeholder="邮箱">
+                                <input class="form-input" id="new-password" type="password" placeholder="初始密码">
+                                <select class="form-input" id="new-status">
+                                    <option value="active">正常</option>
+                                    <option value="disabled">禁用</option>
+                                </select>
+                                <div class="full">
+                                    <button class="btn btn-primary btn-sm admin-btn-purple" type="submit">创建用户</button>
+                                </div>
+                            </div>
+                        </form>
+                        <div class="admin-table-wrap">
+                            <table class="admin-table" id="users-table">
+                                <thead>
+                                    <tr><th>#</th><th>用户名</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>检测记录</th><th>操作</th></tr>
+                                </thead>
+                                <tbody id="users-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="admin-empty" id="users-empty" style="display:none;">暂无用户</div>
+                    </div>
+                </div>
+            </section>
         </main>
+    </div>
+
+    <div class="login-modal-overlay" id="edit-modal" style="display:none;">
+        <div class="login-modal-card" style="text-align:left;">
+            <div class="login-modal-icon" style="margin:0 auto 16px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+            </div>
+            <h3 style="text-align:center;">编辑用户</h3>
+            <p style="text-align:center;margin-bottom:20px;">用户名：<strong id="edit-username-display"></strong></p>
+            <div class="form-group">
+                <label class="form-label">邮箱</label>
+                <input class="form-input" id="edit-email-input" type="email" placeholder="请输入邮箱">
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+                <label class="form-label">新密码（留空则不修改）</label>
+                <input class="form-input" id="edit-password-input" type="password" placeholder="输入新密码">
+            </div>
+            <div class="login-modal-actions" style="margin-top:24px;">
+                <button class="btn btn-primary admin-btn-purple" type="button" onclick="submitEditUser()">保存</button>
+                <button class="btn btn-ghost" type="button" onclick="closeEditModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="login-modal-overlay" id="record-modal" style="display:none;">
+        <div class="login-modal-card" style="text-align:left;max-width:820px;">
+            <h3 style="text-align:center;">检测记录详情</h3>
+            <div id="record-detail-body"></div>
+            <div class="login-modal-actions" style="margin-top:20px;">
+                <button class="btn btn-ghost" type="button" data-admin-action="close-record-modal">关闭</button>
+            </div>
+        </div>
     </div>
 
     <script>
         var adminUser = localStorage.getItem('adminUser');
-        if (!adminUser) { window.location.href = '/admin/login'; }
+        if (!adminUser) { window.location.href = '/login'; }
         else { document.getElementById('admin-name').textContent = adminUser; }
 
         function handleLogout() {
             localStorage.removeItem('adminUser');
-            window.location.href = '/admin/login';
+            window.location.href = '/login';
         }
 
         function switchTab(name, el) {
@@ -495,6 +653,7 @@
             if (name === 'records') loadRecords();
             if (name === 'status') loadStatus();
             if (name === 'logs') loadLogs();
+            if (name === 'users') loadUsers();
         }
 
         function loadConfidence() {
@@ -537,32 +696,104 @@
             return '<span class="admin-badge admin-badge-' + (level || 'low') + '">' + (map[level] || level || '低风险') + '</span>';
         }
 
-        function loadRecords() {
-            fetch('/api/admin/records').then(function(r){return r.json()}).then(function(d){
-                if(d.code!==0) return;
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function recordMediaUrl(item) {
+            if (item.result_video) return item.result_video;
+            if (item.result_filename) return '/results/' + item.result_filename;
+            if (item.result_path) return '/results/' + String(item.result_path).split(/[\\/]/).pop();
+            return '';
+        }
+
+        var currentRecordUsername = '';
+
+        function loadRecords(username) {
+            if (username !== undefined) currentRecordUsername = username || '';
+            var url = '/api/admin/records' + (currentRecordUsername ? '?username=' + encodeURIComponent(currentRecordUsername) : '');
+            apiJson(url).then(function(d){
+                if(d.code!==0) { alert(d.message || '加载检测记录失败'); return; }
                 var items = d.data.items || [];
-                document.getElementById('records-count').textContent = '共 ' + items.length + ' 条记录';
+                allRecords = items;
+                document.getElementById('records-count').textContent = (currentRecordUsername ? currentRecordUsername + '：' : '') + '共 ' + items.length + ' 条记录';
                 var tbody = document.getElementById('records-body');
                 var empty = document.getElementById('records-empty');
                 if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
                 empty.style.display = 'none';
                 tbody.innerHTML = items.map(function(item, i){
+                    var recordId = item.record_id || item.id;
                     return '<tr>' +
                         '<td>' + (i+1) + '</td>' +
-                        '<td>' + (item.created_at || '-') + '</td>' +
-                        '<td>' + (item.original_filename || item.filename || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.created_at || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.username || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.original_filename || item.filename || '-') + '</td>' +
                         '<td>' + (item.count || item.total_objects || 0) + '</td>' +
                         '<td>' + riskBadge(item.max_risk_level) + '</td>' +
-                        '<td><button class="btn btn-ghost btn-sm" onclick="deleteRecord(' + i + ')">删除</button></td>' +
+                        '<td><div class="admin-user-tools">' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="view-record" data-record-id="' + recordId + '">查看</button>' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-record" data-record-id="' + recordId + '">删除</button>' +
+                        '</div></td>' +
                     '</tr>';
                 }).join('');
-            });
+            }).catch(function(){ alert('加载检测记录失败，请检查后端服务是否启动'); });
         }
         function deleteRecord(id) {
             if (!confirm('确认删除此记录？')) return;
-            fetch('/api/admin/records/' + id, {method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
+            apiJson('/api/admin/records/' + encodeURIComponent(id), {method:'DELETE'}).then(function(d){
                 if(d.code===0) loadRecords(); else alert(d.message||'删除失败');
-            });
+            }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
+        }
+
+        var allRecords = [];
+
+        function viewRecordDetail(id) {
+            var item = allRecords.find(function(r) { return String(r.record_id || r.id) === String(id); });
+            if (!item) { alert('未找到该记录'); return; }
+            var mediaUrl = recordMediaUrl(item);
+            var isVideo = String(mediaUrl).toLowerCase().match(/\.(mp4|avi|mov|mkv|webm)$/);
+            var mediaHtml = mediaUrl
+                ? (isVideo
+                    ? '<video class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" controls></video>'
+                    : '<img class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" alt="检测结果">')
+                : '<div class="admin-empty">暂无可预览的结果文件</div>';
+            var detections = item.detections || [];
+            var rows = detections.map(function(det) {
+                var risk = det.risk || {};
+                return '<div class="admin-detail-row">' +
+                    '<strong>' + escapeHtml(det.class_name_cn || det.class_name || '-') + '</strong>' +
+                    '<span>' + ((det.confidence || 0) * 100).toFixed(1) + '%</span>' +
+                    '<span>' + riskBadge(risk.level || 'low') + '</span>' +
+                    '<span>' + escapeHtml(risk.message || risk.reason || '-') + '</span>' +
+                '</div>';
+            }).join('');
+            document.getElementById('record-detail-body').innerHTML =
+                '<div class="admin-detail-grid">' +
+                    '<div><span>检测时间</span><strong>' + escapeHtml(item.created_at || '-') + '</strong></div>' +
+                    '<div><span>文件名</span><strong>' + escapeHtml(item.original_filename || item.filename || '-') + '</strong></div>' +
+                    '<div><span>目标数</span><strong>' + (item.count || item.total_objects || 0) + '</strong></div>' +
+                    '<div><span>风险等级</span><strong>' + riskBadge(item.max_risk_level) + '</strong></div>' +
+                '</div>' +
+                mediaHtml +
+                '<h4 style="margin:12px 0 8px;">目标明细</h4>' +
+                '<div class="admin-detail-list">' + (rows || '<div class="admin-empty">暂无目标明细</div>') + '</div>';
+            document.getElementById('record-modal').style.display = 'flex';
+        }
+
+        function closeRecordModal() {
+            document.getElementById('record-modal').style.display = 'none';
+            document.getElementById('record-detail-body').innerHTML = '';
+        }
+
+        function viewUserRecords(username) {
+            currentRecordUsername = username || '';
+            switchTab('records', document.querySelector('.admin-sidebar-item[onclick*="records"]'));
+            loadRecords(currentRecordUsername);
         }
 
         function loadStatus() {
@@ -617,6 +848,172 @@
                 if(d.code===0) loadLogs();
             });
         }
+
+        var allUsers = [];
+
+        function renderUsersList(items) {
+            var tbody = document.getElementById('users-body');
+            var empty = document.getElementById('users-empty');
+            if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+            empty.style.display = 'none';
+            tbody.innerHTML = items.map(function(u, i){
+                var status = u.status || 'active';
+                return '<tr>' +
+                    '<td>' + (i + 1) + '</td>' +
+                    '<td>' + escapeHtml(u.username || '-') + '</td>' +
+                    '<td>' + escapeHtml(u.email || '-') + '</td>' +
+                    '<td><span class="user-status-' + status + '">' + (status === 'disabled' ? '禁用' : '正常') + '</span></td>' +
+                    '<td>' + escapeHtml(u.created_at || '-') + '</td>' +
+                    '<td><button class="btn btn-ghost btn-sm" type="button" data-admin-action="view-user-records" data-username="' + escapeHtml(u.username || '') + '">查看记录</button></td>' +
+                    '<td><div class="admin-user-tools">' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="edit-user" data-username="' + escapeHtml(u.username || '') + '">编辑</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="toggle-user" data-username="' + escapeHtml(u.username || '') + '" data-status="' + status + '">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-user" data-username="' + escapeHtml(u.username || '') + '">删除</button>' +
+                    '</div></td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function apiJson(url, options) {
+            return fetch(url, options || {}).then(function(r) {
+                return r.json().then(function(data) {
+                    if (!r.ok && data.code === 0) data.code = r.status;
+                    return data;
+                });
+            });
+        }
+
+        function loadUsers() {
+            apiJson('/api/admin/users').then(function(d){
+                if(d.code!==0) { alert(d.message || '加载用户失败'); return; }
+                allUsers = d.data.items || [];
+                document.getElementById('users-count').textContent = '共 ' + allUsers.length + ' 名用户';
+                document.getElementById('user-search').value = '';
+                renderUsersList(allUsers);
+            }).catch(function(){ alert('加载用户失败，请检查后端服务是否启动'); });
+        }
+
+        function filterUsers() {
+            var keyword = document.getElementById('user-search').value.trim().toLowerCase();
+            if (!keyword) { renderUsersList(allUsers); return; }
+            var filtered = allUsers.filter(function(u) {
+                return (u.username || '').toLowerCase().indexOf(keyword) !== -1;
+            });
+            renderUsersList(filtered);
+        }
+
+        function createUser(e) {
+            e.preventDefault();
+            var username = document.getElementById('new-username').value.trim();
+            var email = document.getElementById('new-email').value.trim();
+            var password = document.getElementById('new-password').value;
+            var status = document.getElementById('new-status').value;
+            if (!username || !email || !password) {
+                alert('请填写用户名、邮箱和密码');
+                return false;
+            }
+            apiJson('/api/admin/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: username,
+                    email: email,
+                    password: password,
+                    status: status
+                })
+            }).then(function(d){
+                if(d.code===0){
+                    document.getElementById('new-username').value = '';
+                    document.getElementById('new-email').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('new-status').value = 'active';
+                    loadUsers();
+                } else {
+                    alert(d.message || '创建失败');
+                }
+            }).catch(function(){ alert('创建失败，请检查后端服务是否启动'); });
+            return false;
+        }
+
+        var editingUsername = null;
+
+        function editUser(username) {
+            var user = allUsers.find(function(u) { return u.username === username; });
+            if (!user) { alert('用户数据未加载，请先点击刷新'); return; }
+            editingUsername = username;
+            document.getElementById('edit-username-display').textContent = username;
+            document.getElementById('edit-email-input').value = user.email || '';
+            document.getElementById('edit-password-input').value = '';
+            document.getElementById('edit-modal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            editingUsername = null;
+            document.getElementById('edit-modal').style.display = 'none';
+        }
+
+        function submitEditUser() {
+            if (!editingUsername) return;
+            var email = document.getElementById('edit-email-input').value.trim();
+            var password = document.getElementById('edit-password-input').value;
+            if (!email) { alert('邮箱不能为空'); return; }
+            var body = { email: email };
+            if (password) body.password = password;
+            apiJson('/api/admin/users/' + encodeURIComponent(editingUsername), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            }).then(function(d){
+                if(d.code===0) { closeEditModal(); loadUsers(); }
+                else alert(d.message || '更新失败');
+            }).catch(function(){ alert('更新失败，请检查后端服务是否启动'); });
+        }
+
+        function toggleUserStatus(username, status) {
+            var next = status === 'disabled' ? 'active' : 'disabled';
+            apiJson('/api/admin/users/' + encodeURIComponent(username), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ status: next })
+            }).then(function(d){
+                if(d.code===0) loadUsers(); else alert(d.message || '更新失败');
+            }).catch(function(){ alert('更新失败，请检查后端服务是否启动'); });
+        }
+
+        function deleteUser(username) {
+            if (!confirm('确认删除该用户？')) return;
+            apiJson('/api/admin/users/' + encodeURIComponent(username), { method: 'DELETE' }).then(function(d){
+                if(d.code===0) loadUsers(); else alert(d.message || '删除失败');
+            }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
+        }
+
+        document.addEventListener('click', function(event) {
+            var btn = event.target.closest('[data-admin-action]');
+            if (!btn) return;
+            var action = btn.getAttribute('data-admin-action');
+            if (action === 'refresh-records') loadRecords(currentRecordUsername);
+            if (action === 'view-record') viewRecordDetail(btn.getAttribute('data-record-id'));
+            if (action === 'delete-record') deleteRecord(btn.getAttribute('data-record-id'));
+            if (action === 'view-user-records') viewUserRecords(btn.getAttribute('data-username'));
+            if (action === 'edit-user') editUser(btn.getAttribute('data-username'));
+            if (action === 'toggle-user') toggleUserStatus(btn.getAttribute('data-username'), btn.getAttribute('data-status'));
+            if (action === 'delete-user') deleteUser(btn.getAttribute('data-username'));
+            if (action === 'close-record-modal') closeRecordModal();
+        });
+
+        window.loadRecords = loadRecords;
+        window.deleteRecord = deleteRecord;
+        window.viewRecordDetail = viewRecordDetail;
+        window.closeRecordModal = closeRecordModal;
+        window.viewUserRecords = viewUserRecords;
+        window.loadUsers = loadUsers;
+        window.filterUsers = filterUsers;
+        window.createUser = createUser;
+        window.editUser = editUser;
+        window.closeEditModal = closeEditModal;
+        window.submitEditUser = submitEditUser;
+        window.toggleUserStatus = toggleUserStatus;
+        window.deleteUser = deleteUser;
 
         loadConfidence();
     </script>

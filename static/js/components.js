@@ -35,7 +35,7 @@ const AppHeader = {
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1>自动驾驶场景感知系统</h1>
+                    <h1>自动驾驶感知与仿真系统</h1>
                     <span class="logo-sub" v-if="modelInfo">{{ modelInfo.name }} · {{ modelInfo.inference_mode }} · {{ modelInfo.device }}</span>
                     <span class="logo-sub" v-else>YOLOv8 Detection & Driving Risk Assessment</span>
                 </div>
@@ -52,7 +52,7 @@ const AppHeader = {
                 <div class="header-auth" v-else>
                     <a href="/login" class="btn btn-ghost btn-sm">登录</a>
                     <a href="/register" class="btn btn-primary btn-sm">注册</a>
-                    <a href="/admin/login" class="btn btn-ghost btn-sm">管理</a>
+
                 </div>
             </div>
         </div>
@@ -63,14 +63,24 @@ const AppHeader = {
 const ControlPanel = {
     props: {
         hasFile: Boolean,
-        isDetecting: Boolean
+        isDetecting: Boolean,
+        currentUser: String
     },
-    emits: ['fileSelected', 'detect', 'clear'],
+    emits: ['fileSelected', 'detect', 'clear', 'requireLogin'],
     setup(props, { emit }) {
         const fileName = ref('未选择文件')
         const isDragOver = ref(false)
 
+        function requireLogin() {
+            if (!props.currentUser) {
+                emit('requireLogin')
+                return true
+            }
+            return false
+        }
+
         function handleFile(file) {
+            if (requireLogin()) return
             fileName.value = file.name
             emit('fileSelected', file)
         }
@@ -78,10 +88,15 @@ const ControlPanel = {
             const file = e.target.files[0]
             if (file) handleFile(file)
         }
+        function onUploadClick() {
+            if (requireLogin()) return
+            document.getElementById('fileInput').click()
+        }
         function onDragOver(e) { e.preventDefault(); isDragOver.value = true }
         function onDragLeave() { isDragOver.value = false }
         function onDrop(e) {
             e.preventDefault(); isDragOver.value = false
+            if (requireLogin()) return
             const file = e.dataTransfer.files[0]
             if (file) handleFile(file)
         }
@@ -92,14 +107,14 @@ const ControlPanel = {
             emit('clear')
         }
 
-        return { fileName, isDragOver, onFileChange, onDragOver, onDragLeave, onDrop, onClear }
+        return { fileName, isDragOver, onFileChange, onUploadClick, onDragOver, onDragLeave, onDrop, onClear }
     },
     template: `
     <section class="controls-panel">
         <div class="controls-row">
             <div class="upload-zone" :class="{ 'drag-over': isDragOver }"
                 @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-                @click="$el.querySelector('input[type=file]').click()">
+                @click="onUploadClick">
                 <div class="upload-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -144,8 +159,22 @@ const DisplayArea = {
         const currentLane = ref(null)
         const currentFrameDetections = ref([])
 
+        function riskLevelFromDetections(detections) {
+            if (!detections || !detections.length) return ''
+            const priority = { low: 0, info: 1, medium: 2, high: 3 }
+            return detections.reduce((maxLevel, item) => {
+                const level = item.risk?.level || item.risk_level || 'low'
+                return (priority[level] || 0) > (priority[maxLevel] || 0) ? level : maxLevel
+            }, 'low')
+        }
+
+        //风险边框计算
         const riskBorderClass = Vue.computed(() => {
-            const level = props.maxRiskLevel || ''
+            if (!props.fileType) return ''
+            if (!props.detections || !props.detections.length) return ''
+            const level = props.fileType && props.fileType.startsWith('video/')
+                ? riskLevelFromDetections(currentFrameDetections.value)
+                : (props.maxRiskLevel || riskLevelFromDetections(props.detections))
             if (level === 'high') return 'risk-border-high'
             if (level === 'medium') return 'risk-border-medium'
             if (level === 'info') return 'risk-border-info'
@@ -176,14 +205,22 @@ const DisplayArea = {
             const timeline = props.detectionTimeline || []
             if (!timeline.length) {
                 currentLane.value = props.laneAnalysis || null
-                currentFrameDetections.value = props.detections || []
+                currentFrameDetections.value = props.fileType && props.fileType.startsWith('video/')
+                    ? []
+                    : (props.detections || [])
                 return
             }
             const current = video.currentTime || 0
             let frame = timeline[0]
+            let bestDelta = Math.abs((frame.timestamp_sec || 0) - current)
             for (const item of timeline) {
-                if (item.timestamp_sec <= current + 0.35) frame = item
-                else break
+                const delta = Math.abs((item.timestamp_sec || 0) - current)
+                if (delta <= bestDelta) {
+                    frame = item
+                    bestDelta = delta
+                } else if ((item.timestamp_sec || 0) > current) {
+                    break
+                }
             }
             currentLane.value = frame.lane_analysis || props.laneAnalysis || null
             currentFrameDetections.value = frame.detections || []
@@ -196,10 +233,12 @@ const DisplayArea = {
             const offsetX = (canvas.width - drawWidth) / 2
             const offsetY = (canvas.height - drawHeight) / 2
 
-            drawLaneOverlay(ctx, frame.lane_analysis || props.laneAnalysis, scale, offsetX, offsetY)
-
             ;(frame.detections || []).forEach(d => {
-                const [x1, y1, x2, y2] = d.bbox
+                const [rawX1, rawY1, rawX2, rawY2] = d.bbox
+                const x1 = Math.max(0, Math.min(sourceWidth, rawX1))
+                const y1 = Math.max(0, Math.min(sourceHeight, rawY1))
+                const x2 = Math.max(0, Math.min(sourceWidth, rawX2))
+                const y2 = Math.max(0, Math.min(sourceHeight, rawY2))
                 const risk = d.risk || {}
                 const color = risk.level === 'high' ? '#ef4444' : risk.level === 'medium' ? '#f59e0b' : risk.level === 'info' ? '#3b82f6' : '#10b981'
                 const left = offsetX + x1 * scale
@@ -219,6 +258,7 @@ const DisplayArea = {
             })
         }
 
+        //车道线绘制
         function drawLaneOverlay(ctx, lane, scale, offsetX, offsetY) {
             if (!lane || lane.status !== 'detected') return
             ctx.save()
@@ -235,21 +275,23 @@ const DisplayArea = {
             ctx.restore()
         }
 
+        //高风险检测
         function hasHighRisk() {
             const activeDetections = props.fileType && props.fileType.startsWith('video/')
                 ? currentFrameDetections.value
                 : props.detections
             return (activeDetections || []).some(d => {
                 const level = d.risk?.level || d.risk_level
-                const score = d.risk?.score || d.risk_score || 0
-                return level === 'high' && score >= 88
+                return level === 'high'
             })
         }
 
+        //获取当前车道数据
         function displayLane() {
+            if (!props.fileType) return null
             return currentLane.value || props.laneAnalysis || null
         }
-
+        //动画循环控制
         function drawVideoOverlayFrame() {
             drawVideoOverlay()
             const video = videoRef.value
@@ -316,12 +358,12 @@ const DisplayArea = {
                 <div v-if="displayLane()" class="lane-floating-banner" :class="'lane-floating-' + (displayLane().advice_direction || displayLane().direction || 'unknown')">
                     <span>{{ displayLane().advice_label || displayLane().direction_label || '保持车道观察' }}</span>
                     <strong>{{ displayLane().confidence || 0 }}%</strong>
-                    <small>{{ displayLane().lane_count || 0 }} 条车道线</small>
                 </div>
                 <div v-if="isDetecting && !filePreviewUrl" class="placeholder"><p>正在分析场景风险...</p></div>
                 <template v-else-if="detections && detections.length && fileType && fileType.startsWith('image/') && resultImageUrl">
                     <img :src="resultImageUrl" class="result-canvas animate-in" alt="检测结果" />
                 </template>
+                <!-- 视频区域 -->
                 <div v-else-if="fileType && fileType.startsWith('video/') && (filePreviewUrl || resultVideoUrl)" class="video-result-wrap animate-in">
                     <div class="video-overlay-wrap">
                         <video
@@ -413,10 +455,7 @@ const StatsGrid = {
         inferenceTime: String,
         classCounts: Object,
         riskCounts: Object,
-        maxRiskScore: Number,
-        inferenceMode: String,
-        inferenceSize: Number,
-        refined: Boolean
+
     },
     template: `
     <section class="stats-grid">
@@ -469,7 +508,9 @@ const RiskAnalysisPanel = {
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
         async loadHistory() {
             try {
-                const res = await fetch('/api/detections/history')
+                const currentUser = localStorage.getItem('currentUser') || ''
+                const userQuery = currentUser ? `?username=${encodeURIComponent(currentUser)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0 && json.data.items?.length) {
                     this.historyItems = json.data.items
@@ -2160,52 +2201,13 @@ const DashboardPanel = {
     `
 }
 
-const ReportPanel = {
-    props: {
-        currentFile: Object,
-        stats: Object,
-        detections: Array,
-        advice: Array,
-        modelInfo: Object,
-    },
-    emits: ['exportReport'],
-    template: `
-    <section class="flow-panel">
-        <div class="section-header"><h3>检测报告</h3><span>HTML / printable</span></div>
-        <div class="report-row">
-            <div>
-                <strong>{{ currentFile?.name || '暂无检测文件' }}</strong>
-                <p>报告包含模型信息、风险统计、目标明细、驾驶建议和算法流程，可直接打印或另存为 PDF。</p>
-            </div>
-            <button class="btn btn-primary" :disabled="!detections.length" @click="$emit('exportReport')">生成报告</button>
-        </div>
-    </section>
-    `
-}
-
-const SystemInfoPanel = {
-    props: { modelInfo: Object, healthStatus: Object },
-    template: `
-    <section class="system-panel">
-        <div class="section-header"><h3>系统运行状态</h3><span>{{ healthStatus?.status === 'ok' ? 'online' : 'checking' }}</span></div>
-        <div class="system-grid">
-            <div><span>模型</span><strong>{{ modelInfo?.name || '-' }}</strong></div>
-            <div><span>模型文件</span><strong>{{ modelInfo?.exists ? '已就绪' : '缺失' }}</strong></div>
-            <div><span>推理模式</span><strong>{{ modelInfo?.inference_mode || '-' }}</strong></div>
-            <div><span>输入尺寸</span><strong>{{ modelInfo?.image_size || '-' }} / {{ modelInfo?.refine_image_size || '-' }}</strong></div>
-            <div><span>补检阈值</span><strong>{{ modelInfo?.refine_confidence || '-' }}</strong></div>
-            <div><span>运行设备</span><strong>{{ modelInfo?.device || 'cpu' }}</strong></div>
-        </div>
-    </section>
-    `
-}
 
 
 const HistoryPanel = {
     props: { history: Array },
     emits: ['downloadLog', 'clearHistory'],
     data() {
-        return { allItems: [], viewItem: null }
+        return { allItems: [], viewItem: null, modalVideoPlaying: false, modalVideoProgress: 0 }
     },
     async mounted() {
         await this.loadFullHistory()
@@ -2215,7 +2217,9 @@ const HistoryPanel = {
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
         async loadFullHistory() {
             try {
-                const res = await fetch('/api/detections/history')
+                const currentUser = localStorage.getItem('currentUser') || ''
+                const userQuery = currentUser ? `?username=${encodeURIComponent(currentUser)}` : ''
+                const res = await fetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0 && json.data.items?.length) {
                     this.allItems = json.data.items
@@ -2240,10 +2244,11 @@ const HistoryPanel = {
         mediaUrl(item) {
             if (this.isImage(item) && item.result_filename) return '/results/' + item.result_filename
             if (this.isVideo(item) && item.result_video) return item.result_video
+            if (item.result_path) return '/results/' + String(item.result_path).split(/[\\/]/).pop()
             return ''
         },
         viewMedia(item) {
-            if (this.mediaUrl(item)) this.viewItem = item
+            this.viewItem = item
         },
         closeView() {
             this.viewItem = null
@@ -2255,6 +2260,34 @@ const HistoryPanel = {
             link.download = this.isImage(item) ? 'detection_result.png' : 'detection_result.mp4'
             link.href = url
             link.click()
+        },
+        toggleModalVideo() {
+            var video = document.querySelector('.ph-modal-video')
+            if (!video) return
+            if (video.paused) {
+                video.play()
+                this.modalVideoPlaying = true
+            } else {
+                video.pause()
+                this.modalVideoPlaying = false
+            }
+        },
+        onModalVideoPlay() { this.modalVideoPlaying = true },
+        onModalVideoPause() { this.modalVideoPlaying = false },
+        onModalVideoEnded() { this.modalVideoPlaying = false; this.modalVideoProgress = 0 },
+        onModalVideoTimeUpdate() {
+            var video = document.querySelector('.ph-modal-video')
+            if (video && video.duration) {
+                this.modalVideoProgress = (video.currentTime / video.duration) * 100
+            }
+        },
+        seekModalVideo(e) {
+            var video = document.querySelector('.ph-modal-video')
+            if (!video || !video.duration) return
+            var bar = e.currentTarget
+            var rect = bar.getBoundingClientRect()
+            var ratio = (e.clientX - rect.left) / rect.width
+            video.currentTime = ratio * video.duration
         },
     },
     template: `
@@ -2295,9 +2328,9 @@ const HistoryPanel = {
                             <span class="ph-filename">{{ item.original_filename || item.filename || '-' }}</span>
                             <span class="ph-counts">{{ item.count || item.total_objects || 0 }} 个目标</span>
                             <span :class="riskClass(overallRisk(item))">{{ riskLabel(overallRisk(item)) }}</span>
-                            <div class="ph-actions" v-if="mediaUrl(item)">
+                            <div class="ph-actions">
                                 <button class="btn btn-ghost btn-sm" @click="viewMedia(item)">查看</button>
-                                <button class="btn btn-ghost btn-sm" @click="downloadMedia(item)">下载</button>
+                                <button class="btn btn-ghost btn-sm" v-if="mediaUrl(item)" @click="downloadMedia(item)">下载</button>
                             </div>
                         </div>
                     </div>
@@ -2316,8 +2349,11 @@ const HistoryPanel = {
                     </div>
                 </div>
                 <div class="ph-modal-body">
-                    <img v-if="isImage(viewItem) && viewItem.result_filename" :src="'/results/' + viewItem.result_filename" class="ph-modal-media" alt="">
-                    <video v-else-if="isVideo(viewItem) && viewItem.result_video" :src="viewItem.result_video" controls class="ph-modal-media"></video>
+                    <img v-if="isImage(viewItem) && mediaUrl(viewItem)" :src="mediaUrl(viewItem)" class="ph-modal-media" alt="">
+                    <div v-else-if="isVideo(viewItem) && mediaUrl(viewItem)" class="ph-modal-video-wrap">
+                        <video :src="mediaUrl(viewItem)" class="ph-modal-media ph-modal-video" controls playsinline></video>
+                    </div>
+                    <div v-else class="empty-block">暂无可预览的结果文件</div>
                 </div>
             </div>
         </div>
@@ -2337,8 +2373,7 @@ window.AppComponents = {
 
     SimulationPanel,
     DashboardPanel,
-    ReportPanel,
-    SystemInfoPanel,
+
 
     HistoryPanel,
 }

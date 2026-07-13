@@ -17,7 +17,7 @@
         }
         .profile-card {
             width: 100%;
-            max-width: 520px;
+            max-width: 560px;
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: var(--radius);
@@ -52,9 +52,7 @@
             font-size: 0.78rem;
             color: var(--text-muted);
         }
-        .profile-section {
-            margin-bottom: 24px;
-        }
+        .profile-section { margin-bottom: 24px; }
         .profile-section-title {
             font-size: 0.75rem;
             color: var(--text-muted);
@@ -70,9 +68,7 @@
             padding: 12px 0;
             border-bottom: 1px solid var(--border);
         }
-        .profile-field:last-child {
-            border-bottom: none;
-        }
+        .profile-field:last-child { border-bottom: none; }
         .profile-field-label {
             font-size: 0.85rem;
             color: var(--text-secondary);
@@ -86,12 +82,14 @@
             display: flex;
             gap: 10px;
             margin-top: 8px;
+            flex-wrap: wrap;
         }
-        .profile-edit-form .form-group {
-            margin-bottom: 16px;
-        }
-        .profile-edit-form .form-input {
-            width: 100%;
+        .profile-edit-form .form-group { margin-bottom: 16px; }
+        .profile-edit-form .form-input { width: 100%; }
+        .profile-help {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 6px;
         }
     </style>
 </head>
@@ -105,7 +103,7 @@
             <div class="profile-header">
                 <div class="profile-avatar" id="avatar-letter"></div>
                 <div class="profile-header-info">
-                    <h2 id="display-username"></h2>
+                    <h2 id="display-username">-</h2>
                     <span id="display-role">普通用户</span>
                 </div>
             </div>
@@ -117,11 +115,15 @@
                     <div class="profile-section-title">基本信息</div>
                     <div class="profile-field">
                         <span class="profile-field-label">用户名</span>
-                        <span class="profile-field-value" id="view-username"></span>
+                        <span class="profile-field-value" id="view-username">-</span>
                     </div>
                     <div class="profile-field">
                         <span class="profile-field-label">邮箱</span>
-                        <span class="profile-field-value" id="view-email">未设置</span>
+                        <span class="profile-field-value" id="view-email">-</span>
+                    </div>
+                    <div class="profile-field">
+                        <span class="profile-field-label">账号状态</span>
+                        <span class="profile-field-value" id="view-status">-</span>
                     </div>
                     <div class="profile-field">
                         <span class="profile-field-label">注册时间</span>
@@ -144,17 +146,23 @@
             <div id="edit-mode" style="display:none;">
                 <form class="profile-edit-form" onsubmit="return handleSave(event)">
                     <div class="form-group">
+                        <label class="form-label" for="edit-username">用户名</label>
+                        <input class="form-input" type="text" id="edit-username" placeholder="3-20个字符">
+                        <div class="form-error" id="username-error"></div>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label" for="edit-email">邮箱</label>
                         <input class="form-input" type="email" id="edit-email" placeholder="请输入邮箱">
                         <div class="form-error" id="email-error"></div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-old-password">当前密码</label>
-                        <input class="form-input" type="password" id="edit-old-password" placeholder="修改密码时需输入当前密码">
+                        <input class="form-input" type="password" id="edit-old-password" placeholder="修改密码时需要输入当前密码">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-new-password">新密码</label>
                         <input class="form-input" type="password" id="edit-new-password" placeholder="留空则不修改密码">
+                        <div class="profile-help">只修改用户名或邮箱时，可以不填写密码。</div>
                     </div>
                     <div class="profile-actions">
                         <button class="btn btn-primary btn-sm" type="submit">保存修改</button>
@@ -167,27 +175,53 @@
 
     <script>
         var currentUser = localStorage.getItem('currentUser') || '';
+        var currentProfile = null;
 
         function init() {
             if (!currentUser) {
                 window.location.href = '/login';
                 return;
             }
-            document.getElementById('avatar-letter').textContent = currentUser.charAt(0).toUpperCase();
-            document.getElementById('display-username').textContent = currentUser;
-            document.getElementById('view-username').textContent = currentUser;
+            loadProfile();
+            loadDetectionCount();
+        }
 
-            fetch('/api/detections/history')
+        function loadProfile() {
+            fetch('/api/auth/profile?username=' + encodeURIComponent(currentUser))
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.code !== 0) {
+                        showAlert('error', data.message || '资料加载失败，请重新登录');
+                        return;
+                    }
+                    currentProfile = data.data;
+                    renderProfile(currentProfile);
+                })
+                .catch(function() {
+                    showAlert('error', '网络错误，请检查后端服务是否启动');
+                });
+        }
+
+        function renderProfile(profile) {
+            var username = profile.username || currentUser;
+            document.getElementById('avatar-letter').textContent = username.charAt(0).toUpperCase();
+            document.getElementById('display-username').textContent = username;
+            document.getElementById('display-role').textContent = profile.role === 'admin' ? '管理员' : '普通用户';
+            document.getElementById('view-username').textContent = username;
+            document.getElementById('view-email').textContent = profile.email || '-';
+            document.getElementById('view-status').textContent = profile.status === 'disabled' ? '已禁用' : '正常';
+            document.getElementById('view-created').textContent = profile.created_at || '-';
+            document.getElementById('edit-username').value = username;
+            document.getElementById('edit-email').value = profile.email || '';
+        }
+
+        function loadDetectionCount() {
+            fetch('/api/detections/history?username=' + encodeURIComponent(currentUser))
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.code === 0) {
-                        var items = (data.data.items || []).filter(function(item) {
-                            return item.username === currentUser || !item.username;
-                        });
+                        var items = data.data.items || [];
                         document.getElementById('view-detect-count').textContent = items.length;
-                        if (items.length > 0) {
-                            document.getElementById('view-created').textContent = items[items.length - 1].created_at || '-';
-                        }
                     }
                 })
                 .catch(function() {});
@@ -201,7 +235,7 @@
         function showViewMode() {
             document.getElementById('view-mode').style.display = 'block';
             document.getElementById('edit-mode').style.display = 'none';
-            document.getElementById('email-error').textContent = '';
+            document.querySelectorAll('.form-error').forEach(function(el) { el.textContent = ''; });
         }
 
         function showAlert(type, message) {
@@ -212,13 +246,18 @@
 
         function handleSave(e) {
             e.preventDefault();
-            document.getElementById('email-error').textContent = '';
+            document.querySelectorAll('.form-error').forEach(function(el) { el.textContent = ''; });
 
+            var username = document.getElementById('edit-username').value.trim();
             var email = document.getElementById('edit-email').value.trim();
             var oldPassword = document.getElementById('edit-old-password').value;
             var newPassword = document.getElementById('edit-new-password').value;
 
-            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            if (!username || username.length < 3 || username.length > 20) {
+                document.getElementById('username-error').textContent = '用户名需3-20个字符';
+                return false;
+            }
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                 document.getElementById('email-error').textContent = '请输入有效的邮箱地址';
                 return false;
             }
@@ -231,16 +270,35 @@
                 return false;
             }
 
-            if (email) {
-                document.getElementById('view-email').textContent = email;
-            }
-            if (newPassword) {
-                showAlert('success', '密码修改成功');
-            } else {
+            fetch('/api/auth/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_username: currentUser,
+                    username: username,
+                    email: email,
+                    old_password: oldPassword,
+                    new_password: newPassword
+                })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.code !== 0) {
+                    showAlert('error', data.message || '保存失败');
+                    return;
+                }
+                currentProfile = data.data;
+                currentUser = currentProfile.username;
+                localStorage.setItem('currentUser', currentUser);
+                document.getElementById('edit-old-password').value = '';
+                document.getElementById('edit-new-password').value = '';
+                renderProfile(currentProfile);
+                showViewMode();
                 showAlert('success', '资料已保存');
-            }
-
-            showViewMode();
+            })
+            .catch(function() {
+                showAlert('error', '网络错误，请检查后端服务是否启动');
+            });
             return false;
         }
 

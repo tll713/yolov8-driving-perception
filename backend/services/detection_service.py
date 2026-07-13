@@ -15,7 +15,6 @@ from backend.services.demo_analysis_service import (
     build_safety_advice,
     build_scene_summary,
 )
-from backend.services.history_service import append_history
 from backend.services.lane_service import analyze_lane_image, apply_driving_advice
 from backend.services.model_service import get_model
 from backend.services.result_renderer import render_detection_image
@@ -53,8 +52,9 @@ def _build_demo_fields(detections):
 def _save_to_database(result):
     try:
         result["record_id"] = save_detection_result(result)
-    except Exception:
+    except Exception as exc:
         result["database_saved"] = False
+        raise RuntimeError(f"检测结果保存到 MySQL 失败：{exc}") from exc
     else:
         result["database_saved"] = True
 
@@ -67,7 +67,7 @@ def _lane_analysis_without_visual_lines(lane_analysis):
     return clean_lane_analysis
 
 
-def detect_uploaded_image(upload, confidence=0.5):
+def detect_uploaded_image(upload, confidence=0.5, username=None):
     _validate_file(upload, ALLOWED_IMAGE_EXTENSIONS, "图片")
     confidence = _validate_confidence(confidence)
     original_filename = upload.filename
@@ -89,6 +89,7 @@ def detect_uploaded_image(upload, confidence=0.5):
 
     result = {
         "type": "image",
+        "username": (username or "").strip(),
         "original_filename": original_filename,
         "filename": upload_path.name,
         "upload_path": str(upload_path),
@@ -108,18 +109,17 @@ def detect_uploaded_image(upload, confidence=0.5):
         "detections": detections,
     }
     _save_to_database(result)
-    append_history(result)
     return result
 
 
-def detect_uploaded_video(upload, confidence=DEFAULT_CONFIDENCE):
+def detect_uploaded_video(upload, confidence=DEFAULT_CONFIDENCE, username=None):
     _validate_file(upload, ALLOWED_VIDEO_EXTENSIONS, "视频")
     confidence = _validate_confidence(confidence)
     upload_path = save_upload(upload, upload_dir=UPLOAD_DIR)
-    return detect_video_file(upload_path, upload.filename, confidence=confidence)
+    return detect_video_file(upload_path, upload.filename, confidence=confidence, username=username)
 
 
-def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDENCE, progress_callback=None):
+def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDENCE, progress_callback=None, username=None):
     import cv2
 
     confidence = _validate_confidence(confidence)
@@ -210,6 +210,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
 
             if progress_callback and is_sample_frame:
                 risk_summary = summarize_risk(all_detections)
+                frame_risk_summary = summarize_risk(frame_detections)
                 progress = min(99, int(((frame_idx + 1) / total_frames) * 100)) if total_frames else 0
                 progress_callback(
                     {
@@ -222,6 +223,9 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                         "detections": frame_detections,
                         "all_detections": list(all_detections),
                         "lane_analysis": _lane_analysis_without_visual_lines(frame_lane_analysis),
+                        "frame_max_risk_level": frame_risk_summary["max_risk_level"],
+                        "frame_max_risk_score": frame_risk_summary["max_risk_score"],
+                        "frame_risk_counts": frame_risk_summary["risk_counts"],
                         **risk_summary,
                         **_build_demo_fields(all_detections),
                     }
@@ -237,6 +241,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     processed_seconds = round(frame_idx / fps, 2) if fps else None
     result = {
         "type": "video",
+        "username": (username or "").strip(),
         "original_filename": original_filename,
         "filename": upload_path.name,
         "upload_path": str(upload_path),
@@ -261,5 +266,4 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
         "detections": all_detections,
     }
     _save_to_database(result)
-    append_history(result)
     return result

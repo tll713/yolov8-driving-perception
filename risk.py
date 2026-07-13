@@ -71,6 +71,11 @@ def _bbox_features(bbox, image_width, image_height):
     area_ratio = box_area / image_area
     lane_overlap = _lane_overlap(x1, x2, bottom_y, image_width, image_height)
     bottom_ratio = _clamp(bottom_y / max(1, image_height), 0, 1)
+    signed_center_offset_ratio = round(center_x / max(1, image_width) - 0.5, 4)
+    if signed_center_offset_ratio < 0:
+        path_intrusion_ratio = x2 / max(1, image_width)
+    else:
+        path_intrusion_ratio = 1 - x1 / max(1, image_width)
 
     distance_score = _clamp(round(bottom_ratio * 62 + min(area_ratio * 260, 28)))
     position_score = _clamp(round(lane_overlap * 36 + (12 if bottom_ratio >= 0.58 else 0)))
@@ -82,6 +87,9 @@ def _bbox_features(bbox, image_width, image_height):
         "center_y": round(center_y, 2),
         "bottom_y": round(bottom_y, 2),
         "area_ratio": round(area_ratio, 6),
+        "center_offset_ratio": abs(signed_center_offset_ratio),
+        "signed_center_offset_ratio": signed_center_offset_ratio,
+        "path_intrusion_ratio": round(_clamp(path_intrusion_ratio, 0, 1), 4),
         "zone": _zone(center_x, center_y, image_width, image_height),
         "lane_overlap": lane_overlap,
         "distance_score": distance_score,
@@ -104,11 +112,13 @@ def _score_detection(class_name, confidence, features):
         + confidence_score
     )
 
-    if features["lane_overlap"] < 0.35:
+    if features["lane_overlap"] < 0.22:
         raw_score -= 20
-    if class_name in VEHICLE_CLASSES and features["distance_score"] < 52:
+    elif features["lane_overlap"] < 0.35:
+        raw_score -= 10
+    if class_name in VEHICLE_CLASSES and features["distance_score"] < 50:
         raw_score -= 12
-    if class_name in VEHICLE_CLASSES and features["area_ratio"] < 0.045:
+    if class_name in VEHICLE_CLASSES and features["area_ratio"] < 0.04:
         raw_score -= 8
     if confidence < 0.4:
         raw_score -= 18
@@ -116,23 +126,66 @@ def _score_detection(class_name, confidence, features):
     return _clamp(round(raw_score))
 
 
-def _level_from_score(class_name, score, lane_overlap, confidence, distance_score, area_ratio, zone):
+def _level_from_score(
+    class_name,
+    score,
+    lane_overlap,
+    confidence,
+    distance_score,
+    area_ratio,
+    zone,
+    center_offset_ratio,
+    path_intrusion_ratio,
+):
     if class_name in TRAFFIC_INFO_CLASSES:
         return "info"
 
     if class_name in VEHICLE_CLASSES:
         is_center_path = zone.endswith("center")
-        is_critical_vehicle = (
-            score >= 88
+        is_normal_side_overtake = (
+            not is_center_path
+            and center_offset_ratio > 0.34
+            and path_intrusion_ratio < 0.42
+        )
+        is_adjacent_front_path = (
+            not is_center_path
             and distance_score >= 72
-            and area_ratio >= 0.07
-            and lane_overlap >= 0.58
+            and area_ratio >= 0.055
+            and lane_overlap >= 0.28
+            and center_offset_ratio <= 0.42
+            and path_intrusion_ratio >= 0.42
+            and confidence >= 0.5
+        )
+        is_very_close_side_intrusion = (
+            not is_center_path
+            and distance_score >= 80
+            and area_ratio >= 0.075
+            and lane_overlap >= 0.18
+            and center_offset_ratio <= 0.48
+            and path_intrusion_ratio >= 0.38
             and confidence >= 0.55
+        )
+        is_critical_vehicle = (
+            score >= 82
+            and distance_score >= 67
+            and area_ratio >= 0.055
+            and lane_overlap >= 0.48
+            and confidence >= 0.5
             and is_center_path
         )
-        if is_critical_vehicle:
+        if not is_normal_side_overtake and (
+            is_critical_vehicle or is_adjacent_front_path or is_very_close_side_intrusion
+        ):
             return "high"
-        if score >= 56 and (distance_score >= 54 or lane_overlap >= 0.32):
+        is_clear_medium_vehicle = (
+            score >= 70
+            and (
+                distance_score >= 64
+                or (distance_score >= 56 and lane_overlap >= 0.38)
+                or (area_ratio >= 0.075 and lane_overlap >= 0.22)
+            )
+        )
+        if is_clear_medium_vehicle:
             return "medium"
         return "low"
 
@@ -140,9 +193,9 @@ def _level_from_score(class_name, score, lane_overlap, confidence, distance_scor
     is_in_path = lane_overlap >= 0.52
     is_reliable = confidence >= 0.5
 
-    if score >= 86 and is_close and is_in_path and is_reliable:
+    if score >= 84 and is_close and is_in_path and is_reliable:
         return "high"
-    if score >= 52 and (lane_overlap >= 0.28 or distance_score >= 52):
+    if score >= 64 and (distance_score >= 60 or lane_overlap >= 0.45):
         return "medium"
     return "low"
 
@@ -153,6 +206,8 @@ def _reason_parts(class_name, confidence, features):
         parts.append("目标与自车行驶路径高度重叠")
     elif features["lane_overlap"] >= 0.35:
         parts.append("目标接近自车行驶路径")
+    elif features["lane_overlap"] >= 0.18 and features["distance_score"] >= 72:
+        parts.append("侧前方目标已接近行驶路径边界")
     else:
         parts.append("目标主要位于侧向区域")
 
@@ -199,11 +254,16 @@ def assess_detection(detection, image_width, image_height):
         features["distance_score"],
         features["area_ratio"],
         features["zone"],
+        features["center_offset_ratio"],
+        features["path_intrusion_ratio"],
     )
     reason = "；".join(_reason_parts(class_name, confidence, features))
 
     if level == "high":
-        message = f"高风险：前方行驶路径内检测到{label}"
+        if class_name in VEHICLE_CLASSES and not features["zone"].endswith("center"):
+            message = f"高风险：侧前方近距离{label}侵入行驶路径"
+        else:
+            message = f"高风险：前方行驶路径内检测到{label}"
     elif level == "medium":
         message = f"中风险：周边道路区域检测到{label}"
     else:
@@ -239,6 +299,9 @@ def assess_detections(detections, image_width, image_height):
                 "bottom_y": features["bottom_y"],
                 "area_ratio": features["area_ratio"],
                 "zone": features["zone"],
+                "center_offset_ratio": features["center_offset_ratio"],
+                "signed_center_offset_ratio": features["signed_center_offset_ratio"],
+                "path_intrusion_ratio": features["path_intrusion_ratio"],
                 "lane_overlap": features["lane_overlap"],
                 "distance_score": features["distance_score"],
                 "position_score": features["position_score"],

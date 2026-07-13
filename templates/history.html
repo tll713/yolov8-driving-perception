@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>检测历史 - 自动驾驶目标检测与风险提示系统</title>
+    <title>检测历史 - 自动驾驶感知与仿真系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -65,6 +65,12 @@
             info: { label: '交通提示', cls: 'risk-info' },
             low: { label: '低风险', cls: 'risk-low' },
         };
+        const currentUser = localStorage.getItem('currentUser') || '';
+        if (!currentUser) window.location.href = '/login';
+
+        function historyUrl() {
+            return '/api/detections/history?username=' + encodeURIComponent(currentUser);
+        }
 
         function computeOverallRisk(detections) {
             const levels = (detections || []).map(d => d.risk?.level || d.risk_level || 'low');
@@ -84,7 +90,7 @@
         async function loadHistory() {
             const container = document.getElementById('history-list');
             try {
-                const res = await fetch('/api/detections/history');
+                const res = await fetch(historyUrl());
                 const json = await res.json();
                 if (json.code !== 0 || !json.data.items?.length) {
                     container.innerHTML = '<div class="history-empty-page">暂无检测记录</div>';
@@ -115,7 +121,7 @@
 
         async function downloadHistory() {
             try {
-                const res = await fetch('/api/detections/history');
+                const res = await fetch(historyUrl());
                 const json = await res.json();
                 if (json.code !== 0 || !json.data.items?.length) {
                     alert('暂无历史记录可导出');
@@ -174,7 +180,11 @@
 
         async function clearHistory() {
             if (!confirm('确定清空所有检测历史记录？')) return;
-            await fetch('/api/detections/history/clear', { method: 'POST' });
+            await fetch('/api/detections/history/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: currentUser }),
+            });
             await loadHistory();
         }
 
