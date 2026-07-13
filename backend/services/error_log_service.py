@@ -1,7 +1,10 @@
-"""中心化错误日志服务 —— MySQL 优先，文件兜底，永不抛异常"""
+"""中心化错误日志服务 —— MySQL 优先，文件兜底，永不抛异常。
+内置内存级去重：相同来源 + 类型 + 消息 + 路径的错误在时间窗口内只记录一次。"""
 
 import json
 import os
+import time
+from collections import OrderedDict
 from datetime import datetime
 from threading import Lock
 
@@ -16,7 +19,13 @@ from backend.services.database_service import (
 )
 
 _FILE_LOCK = Lock()
+_DEDUP_LOCK = Lock()
 _MAX_FILE_ENTRIES = 200
+
+# 内存级去重：{签名: 首次记录时间}，窗口内的重复错误不写入
+_DEDUP_CACHE = OrderedDict()
+_DEDUP_WINDOW_SECONDS = 60
+_DEDUP_MAX_SIZE = 500
 
 
 def _now():
@@ -44,6 +53,32 @@ def _write_file_logs(logs):
     )
 
 
+def _dedup_key(source, error_type, message, request_path):
+    """生成去重签名 —— 相同来源 + 类型 + 消息 + 路径视为同一错误"""
+    return f"{source or ''}||{error_type or ''}||{message or ''}||{request_path or ''}"
+
+
+def _is_duplicate(key):
+    """检查是否为窗口内的重复错误。返回 True 表示应跳过写入"""
+    now = time.time()
+    with _DEDUP_LOCK:
+        # 清理过期条目
+        expired = [k for k, v in _DEDUP_CACHE.items() if now - v > _DEDUP_WINDOW_SECONDS]
+        for k in expired:
+            del _DEDUP_CACHE[k]
+
+        if key in _DEDUP_CACHE:
+            _DEDUP_CACHE[key] = now  # 更新时间戳，延长窗口
+            return True
+
+        # 淘汰最旧条目
+        while len(_DEDUP_CACHE) >= _DEDUP_MAX_SIZE:
+            _DEDUP_CACHE.popitem(last=False)
+
+        _DEDUP_CACHE[key] = now
+        return False
+
+
 def _next_file_id(logs):
     """生成下一个文件端递增 ID"""
     if not logs:
@@ -62,7 +97,13 @@ def log_error(
     status_code=None,
     stack_trace="",
 ):
-    """写入错误日志 —— 优先 MySQL，失败时降级写入 JSON 文件。永不抛异常"""
+    """写入错误日志 —— 优先 MySQL，失败时降级写入 JSON 文件。永不抛异常。
+    相同来源 + 类型 + 消息 + 路径的错误在 60 秒内只记录一次。"""
+    # 去重检查
+    key = _dedup_key(source, error_type, message, request_path)
+    if _is_duplicate(key):
+        return
+
     try:
         _db_save_error_log(
             level=level,

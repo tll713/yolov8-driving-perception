@@ -102,6 +102,29 @@ def create_app():
     app.register_blueprint(models_bp, url_prefix="/api")
     app.register_blueprint(simulation_bp, url_prefix="/api")
 
+    def _extract_request_username():
+        """从请求中尝试提取当前操作用户名（用于全局错误日志）"""
+        # 1) 表单字段
+        username = (request.form.get("username") or "").strip()
+        if username:
+            return username
+        # 2) 查询参数
+        username = (request.args.get("username") or "").strip()
+        if username:
+            return username
+        # 3) JSON 请求体
+        try:
+            if request.is_json:
+                data = request.get_json(silent=True) or {}
+                username = (data.get("username") or data.get("current_username") or "").strip()
+                if username:
+                    return username
+        except Exception:
+            pass
+        # 4) 自定义请求头（前端可设置）
+        username = (request.headers.get("X-Username") or "").strip()
+        return username
+
     # ---- 全局错误处理器 ----
     @app.errorhandler(404)
     def handle_404(exc):
@@ -115,7 +138,7 @@ def create_app():
                 message=f"请求的接口不存在：{request.method} {request.path}",
                 request_path=request.path,
                 request_method=request.method,
-                username="",
+                username=_extract_request_username(),
                 status_code=404,
             )
         except Exception:
@@ -134,7 +157,7 @@ def create_app():
                 message=str(exc),
                 request_path=request.path,
                 request_method=request.method,
-                username="",
+                username=_extract_request_username(),
                 status_code=500,
                 stack_trace=traceback.format_exc(),
             )
@@ -158,7 +181,7 @@ def create_app():
                 message=str(exc),
                 request_path=request.path,
                 request_method=request.method,
-                username="",
+                username=_extract_request_username(),
                 status_code=status_code,
                 stack_trace=traceback.format_exc(),
             )
