@@ -6,6 +6,7 @@ from risk import RISK_LABELS
 
 
 RISK_ORDER = {"low": 1, "info": 2, "medium": 3, "high": 4}
+MAX_RISK_LOGS_PER_RECORD = 20
 
 USER_TABLE = "`用户表`"
 RECORD_TABLE = "`检测记录表`"
@@ -166,6 +167,34 @@ def _get_risk_rule_id(cursor, class_name, risk_level):
     return cursor.lastrowid
 
 
+def _risk_log_key(payload):
+    return (
+        payload.get("class_name") or "",
+        payload.get("risk_level") or "",
+        payload.get("risk_reason") or "",
+    )
+
+
+def _risk_log_candidates(payloads):
+    candidates = {}
+    for payload in payloads:
+        if payload.get("risk_level") not in {"medium", "high"}:
+            continue
+        key = _risk_log_key(payload)
+        existing = candidates.get(key)
+        if existing is None or payload.get("confidence", 0) > existing.get("confidence", 0):
+            candidates[key] = payload
+
+    def sort_key(item):
+        return (
+            RISK_ORDER.get(item.get("risk_level"), 0),
+            item.get("confidence", 0),
+            item.get("bbox_area", 0),
+        )
+
+    return sorted(candidates.values(), key=sort_key, reverse=True)[:MAX_RISK_LOGS_PER_RECORD]
+
+
 def save_detection_result(result):
     detections = result.get("detections", [])
     conn = get_connection()
@@ -202,6 +231,7 @@ def save_detection_result(result):
             )
             record_id = cursor.lastrowid
 
+            risk_payloads = []
             for detection in detections:
                 payload = {
                     "record_id": record_id,
@@ -223,25 +253,27 @@ def save_detection_result(result):
                     """,
                     payload,
                 )
-                object_id = cursor.lastrowid
-                if payload["risk_level"] in {"medium", "high"}:
-                    payload["risk_rule_id"] = _get_risk_rule_id(
-                        cursor,
-                        payload["class_name"],
-                        payload["risk_level"],
+                payload["object_id"] = cursor.lastrowid
+                risk_payloads.append(payload)
+
+            for payload in _risk_log_candidates(risk_payloads):
+                payload["risk_rule_id"] = _get_risk_rule_id(
+                    cursor,
+                    payload["class_name"],
+                    payload["risk_level"],
+                )
+                cursor.execute(
+                    f"""
+                    INSERT INTO {RISK_LOG_TABLE} (
+                        `检测记录编号`, `检测目标编号`, `风险规则编号`,
+                        `风险等级`, `风险提示`, `风险原因`
+                    ) VALUES (
+                        %(record_id)s, %(object_id)s, %(risk_rule_id)s, %(risk_level)s,
+                        %(risk_message)s, %(risk_reason)s
                     )
-                    cursor.execute(
-                        f"""
-                        INSERT INTO {RISK_LOG_TABLE} (
-                            `检测记录编号`, `检测目标编号`, `风险规则编号`,
-                            `风险等级`, `风险提示`, `风险原因`
-                        ) VALUES (
-                            %(record_id)s, %(object_id)s, %(risk_rule_id)s, %(risk_level)s,
-                            %(risk_message)s, %(risk_reason)s
-                        )
-                        """,
-                        {**payload, "object_id": object_id},
-                    )
+                    """,
+                    payload,
+                )
 
         conn.commit()
         return record_id

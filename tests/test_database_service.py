@@ -87,6 +87,7 @@ class DatabaseServiceTest(unittest.TestCase):
         connection = FakeConnection()
         result = {
             "type": "image",
+            "username": "liu",
             "original_filename": "road_001.jpg",
             "filename": "road_001.jpg",
             "upload_path": "uploads/road_001.jpg",
@@ -139,6 +140,42 @@ class DatabaseServiceTest(unittest.TestCase):
         self.assertEqual(object_params["center_x"], 585)
         self.assertEqual(object_params["center_y"], 530)
         self.assertEqual(object_params["risk_reason"], "检测到 person，且目标中心位于画面下半部分")
+
+    def test_save_detection_result_deduplicates_risk_logs_by_class_level_and_reason(self):
+        connection = FakeConnection()
+        result = {
+            "type": "image",
+            "username": "liu",
+            "original_filename": "road_001.jpg",
+            "filename": "road_001.jpg",
+            "upload_path": "uploads/road_001.jpg",
+            "result_path": "",
+            "model_name": "yolov8s",
+            "confidence": 0.5,
+            "image_width": 1280,
+            "image_height": 720,
+            "inference_time_ms": 85,
+            "detections": [
+                {
+                    "class_name": "car",
+                    "confidence": 0.5,
+                    "bbox": [520, 360, 650, 700],
+                    "risk": {"level": "medium", "message": "中风险"},
+                },
+                {
+                    "class_name": "car",
+                    "confidence": 0.9,
+                    "bbox": [530, 360, 660, 700],
+                    "risk": {"level": "medium", "message": "中风险"},
+                },
+            ],
+        }
+
+        with patch("backend.services.database_service.get_connection", return_value=connection):
+            save_detection_result(result)
+
+        sql_text = "\n".join(sql for sql, _ in connection.statements)
+        self.assertEqual(sql_text.count("INSERT INTO `风险日志表`"), 1)
 
     def test_list_detection_history_returns_recent_records(self):
         connection = FakeConnection()
