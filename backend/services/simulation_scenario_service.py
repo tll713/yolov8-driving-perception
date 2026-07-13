@@ -20,6 +20,7 @@ _SCENARIO_FIELDS = {
     "brake_deceleration_mps2",
     "aeb_delay_sec",
     "aeb_ramp_sec",
+    "aeb_safety_margin_m",
     "targets",
     "events",
 }

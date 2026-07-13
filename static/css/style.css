@@ -1256,11 +1256,11 @@ li::before {
     pointer-events: none;
 }
 .weather-rain .sim-weather-layer {
-    opacity: 0.34;
+    opacity: 0.2;
     background:
-        repeating-linear-gradient(108deg, transparent 0 14px, rgba(182,216,230,0.46) 15px 16px, transparent 17px 30px),
-        linear-gradient(180deg, rgba(95,122,136,0.18), rgba(12,18,22,0.14));
-    animation: sim-rain 0.7s linear infinite;
+        repeating-linear-gradient(108deg, transparent 0 20px, rgba(190,220,231,0.38) 21px 22px, transparent 23px 40px),
+        linear-gradient(180deg, rgba(95,122,136,0.12), rgba(12,18,22,0.09));
+    animation: sim-rain 0.85s linear infinite;
 }
 .weather-fog .sim-weather-layer {
     background:
@@ -1610,6 +1610,7 @@ li::before {
 .sim-comparison-metrics > div { display: grid; gap: 5px; padding: 8px; background: #11171c; }
 .sim-comparison-metrics span { color: #6f7c86; font-size: 0.61rem; }
 .sim-comparison-metrics strong { color: #e7ecef; font: 600 0.73rem 'JetBrains Mono', monospace; }
+.sim-comparison-summary { margin-bottom: 12px; }
 
 /* First-person 3D simulation stage */
 .sim-workspace {
@@ -1764,7 +1765,7 @@ li::before {
     backdrop-filter: blur(1px);
 }
 .sim-target.target-person { width: calc(54px * var(--target-scale, 1)); }
-.sim-target.target-traffic_light { width: calc(48px * var(--target-scale, 1)); height: calc(120px * var(--target-scale, 1)); }
+.sim-target.target-traffic_light { width: calc(46px * var(--target-scale, 1)); height: calc(72px * var(--target-scale, 1)); }
 .sim-target.risk-bg-medium { color: #f5b02e; }
 .sim-target.risk-bg-high { color: #ff4c55; animation: sim-target-alert 0.8s ease-in-out infinite; }
 .sim-target .corner {
@@ -1792,6 +1793,15 @@ li::before {
     box-shadow: 0 10px 24px rgba(0,0,0,0.28);
 }
 .sim-target-label strong { color: currentColor; }
+.sim-target.target-person .sim-target-label {
+    left: auto;
+    right: calc(100% + 8px);
+    top: 2px;
+}
+.sim-target.target-traffic_light .sim-target-label {
+    left: calc(100% + 8px);
+    top: 2px;
+}
 @keyframes sim-target-alert {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.68; }

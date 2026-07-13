@@ -1,11 +1,15 @@
 import math
+from bisect import insort
 
 from backend.simulation_config import CLASS_BASE_RISK, CLASS_LABELS, PRESET_SCENARIOS, WEATHER_PROFILES
 
 
 LANE_HALF_WIDTH_M = 1.8
-COLLISION_RADIUS_M = 2.2
+COLLISION_LONGITUDINAL_HALF_LENGTH_M = 4.2
+COLLISION_LATERAL_HALF_WIDTH_M = 1.9
+AEB_SAFETY_MARGIN_M = 2.5
 MAX_CPA_HORIZON_SEC = 12
+MOTION_CHECK_MAX_STEP_SEC = 0.05
 EVENT_FIELDS = {
     "longitudinal_speed_mps",
     "lateral_speed_mps",
@@ -74,7 +78,7 @@ def _collision_metrics(distance_m, lateral_m, ego_speed_mps, target_speed_mps, l
     else:
         lateral_ttc = None
 
-    cpa_ttc = None
+    collision_envelope_ttc = None
     cpa_distance = None
     if relative_speed_sq > 0.01:
         candidate = -(
@@ -84,11 +88,17 @@ def _collision_metrics(distance_m, lateral_m, ego_speed_mps, target_speed_mps, l
             cpa_longitudinal = distance_m + relative_longitudinal_speed * candidate
             cpa_lateral = lateral_m + lateral_speed_mps * candidate
             cpa_distance = math.hypot(cpa_longitudinal, cpa_lateral)
-            if cpa_distance <= COLLISION_RADIUS_M:
-                cpa_ttc = candidate
+        collision_entry = _collision_entry_fraction(
+            distance_m,
+            lateral_m,
+            distance_m + relative_longitudinal_speed * MAX_CPA_HORIZON_SEC,
+            lateral_m + lateral_speed_mps * MAX_CPA_HORIZON_SEC,
+        )
+        if collision_entry is not None:
+            collision_envelope_ttc = collision_entry * MAX_CPA_HORIZON_SEC
 
     return {
-        "ttc_sec": round(cpa_ttc, 2) if cpa_ttc is not None else None,
+        "ttc_sec": round(collision_envelope_ttc, 2) if collision_envelope_ttc is not None else None,
         "longitudinal_ttc_sec": round(longitudinal_ttc, 2) if longitudinal_ttc is not None else None,
         "lateral_ttc_sec": round(lateral_ttc, 2) if lateral_ttc is not None else None,
         "cpa_distance_m": round(cpa_distance, 2) if cpa_distance is not None else None,
@@ -169,11 +179,11 @@ def _advice_for(level, target):
 
 def _default_payload(payload):
     requested_key = payload.get("scenario", "pedestrian_crossing")
-    has_custom_targets = bool(payload.get("targets"))
+    has_explicit_targets = "targets" in payload
     if requested_key in PRESET_SCENARIOS:
         preset = PRESET_SCENARIOS[requested_key]
         scenario_key = requested_key
-    elif has_custom_targets:
+    elif has_explicit_targets:
         preset = {
             "name": payload.get("name", "自定义场景"),
             "description": payload.get("description", ""),
@@ -185,15 +195,27 @@ def _default_payload(payload):
         }
         scenario_key = requested_key or "custom"
     else:
-        scenario_key = "pedestrian_crossing"
-        preset = PRESET_SCENARIOS[scenario_key]
+        raise ValueError(f"不支持的仿真场景：{requested_key}")
+
+    events = (
+        payload.get("events")
+        if payload.get("events") is not None
+        else ([] if has_explicit_targets else preset.get("events", []))
+    )
+    if not has_explicit_targets and payload.get("events") is None and payload.get("duration_sec") not in (None, ""):
+        try:
+            duration_limit = float(payload["duration_sec"])
+        except (TypeError, ValueError):
+            duration_limit = None
+        if duration_limit is not None:
+            events = [event for event in events if float(event.get("time_sec", 0)) <= duration_limit]
 
     return {
         **preset,
         **{key: value for key, value in payload.items() if value not in (None, "")},
         "scenario": scenario_key,
-        "targets": payload.get("targets") or preset["targets"],
-        "events": payload.get("events") if payload.get("events") is not None else ([] if has_custom_targets else preset.get("events", [])),
+        "targets": payload.get("targets") if has_explicit_targets else preset["targets"],
+        "events": events,
     }
 
 
@@ -240,6 +262,8 @@ def _validate_and_build_targets(targets):
             "effective_longitudinal_acceleration_mps2": 0,
             "heading_rad": target.get("heading_rad"),
             "follow_hazard_since": None,
+            "collision_time_sec": None,
+            "collision_ego_speed_kmh": None,
         }
     return states
 
@@ -328,7 +352,130 @@ def _target_heading(state):
     return round(math.atan2(state["lateral_speed_mps"], max(state["longitudinal_speed_mps"], 0.1)), 4)
 
 
-def _build_metrics(timeline, step_sec, ego_distance_m):
+def _timeline_points(duration_sec, step_sec, events=None):
+    points = [0.0]
+    while points[-1] + step_sec < duration_sec - 1e-9:
+        points.append(round(points[-1] + step_sec, 6))
+    if not math.isclose(points[-1], duration_sec, abs_tol=1e-9):
+        points.append(duration_sec)
+    else:
+        points[-1] = duration_sec
+    for event in events or []:
+        _insert_timeline_point(points, event["time_sec"], duration_sec)
+    return points
+
+
+def _insert_timeline_point(points, value, duration_sec):
+    value = round(value, 6)
+    if value < 0 or value > duration_sec:
+        return
+    if any(math.isclose(point, value, abs_tol=1e-9) for point in points):
+        return
+    insort(points, value)
+
+
+def _integrate_longitudinal_motion(speed_mps, acceleration_mps2, duration_sec):
+    next_speed_mps = speed_mps + acceleration_mps2 * duration_sec
+    if acceleration_mps2 < 0 and next_speed_mps < 0:
+        stop_time_sec = speed_mps / -acceleration_mps2
+        distance_m = speed_mps * stop_time_sec + 0.5 * acceleration_mps2 * stop_time_sec**2
+        return 0, distance_m
+    distance_m = speed_mps * duration_sec + 0.5 * acceleration_mps2 * duration_sec**2
+    return max(0, next_speed_mps), distance_m
+
+
+def _collision_entry_fraction(start_longitudinal, start_lateral, end_longitudinal, end_lateral):
+    entry = 0.0
+    exit_ = 1.0
+    for start, end, half_extent in (
+        (start_longitudinal, end_longitudinal, COLLISION_LONGITUDINAL_HALF_LENGTH_M),
+        (start_lateral, end_lateral, COLLISION_LATERAL_HALF_WIDTH_M),
+    ):
+        delta = end - start
+        if abs(delta) < 1e-9:
+            if abs(start) > half_extent:
+                return None
+            continue
+        first = (-half_extent - start) / delta
+        second = (half_extent - start) / delta
+        entry = max(entry, min(first, second))
+        exit_ = min(exit_, max(first, second))
+        if entry > exit_:
+            return None
+    return entry if 0 <= entry <= 1 else None
+
+
+def _collision_clearance(distance_m, lateral_m):
+    longitudinal_clearance = max(0, abs(distance_m) - COLLISION_LONGITUDINAL_HALF_LENGTH_M)
+    lateral_clearance = max(0, abs(lateral_m) - COLLISION_LATERAL_HALF_WIDTH_M)
+    return math.hypot(longitudinal_clearance, lateral_clearance)
+
+
+def _minimum_interval_clearance(start_longitudinal, start_lateral, end_longitudinal, end_lateral):
+    if _collision_entry_fraction(start_longitudinal, start_lateral, end_longitudinal, end_lateral) is not None:
+        return 0
+
+    def clearance(fraction):
+        longitudinal = start_longitudinal + (end_longitudinal - start_longitudinal) * fraction
+        lateral = start_lateral + (end_lateral - start_lateral) * fraction
+        return _collision_clearance(longitudinal, lateral)
+
+    left = 0.0
+    right = 1.0
+    for _ in range(32):
+        first = left + (right - left) / 3
+        second = right - (right - left) / 3
+        if clearance(first) <= clearance(second):
+            right = second
+        else:
+            left = first
+    return min(clearance(0), clearance(1), clearance((left + right) / 2))
+
+
+def _aeb_assessment(
+    target_state,
+    ego_speed_mps,
+    effective_brake_deceleration_mps2,
+    reaction_delay_sec,
+    brake_ramp_sec,
+    safety_margin_m,
+):
+    risk = target_state["risk"]
+    class_name = target_state["class_name"]
+    is_red_light = class_name in {"traffic light", "traffic_light"} and target_state.get("state") == "red"
+    relative_longitudinal_speed = target_state["longitudinal_speed_mps"] - ego_speed_mps
+    predicted_longitudinal = target_state["distance_m"] + relative_longitudinal_speed * MAX_CPA_HORIZON_SEC
+    predicted_lateral = target_state["lateral_m"] + target_state["lateral_speed_mps"] * MAX_CPA_HORIZON_SEC
+    intersects_collision_envelope = _collision_entry_fraction(
+        target_state["distance_m"],
+        target_state["lateral_m"],
+        predicted_longitudinal,
+        predicted_lateral,
+    ) is not None
+    on_collision_path = intersects_collision_envelope or is_red_light
+    if not target_state["detected"] or target_state["distance_m"] <= 0 or not on_collision_path:
+        return None
+
+    closing_speed_mps = max(0, ego_speed_mps - target_state["longitudinal_speed_mps"])
+    reaction_distance_m = closing_speed_mps * (reaction_delay_sec + brake_ramp_sec / 2)
+    braking_distance_m = closing_speed_mps**2 / (2 * effective_brake_deceleration_mps2)
+    collision_buffer_m = COLLISION_LONGITUDINAL_HALF_LENGTH_M
+    required_distance_m = reaction_distance_m + braking_distance_m + collision_buffer_m + safety_margin_m
+    actual_distance_m = target_state["distance_m"]
+    return {
+        "target_id": target_state["id"],
+        "target_class_name_cn": target_state["class_name_cn"],
+        "actual_distance_m": round(actual_distance_m, 3),
+        "required_distance_m": round(required_distance_m, 3),
+        "reaction_distance_m": round(reaction_distance_m, 3),
+        "braking_distance_m": round(braking_distance_m, 3),
+        "collision_buffer_m": round(collision_buffer_m, 3),
+        "safety_margin_m": round(safety_margin_m, 3),
+        "distance_margin_m": round(actual_distance_m - required_distance_m, 3),
+    }
+
+
+def _build_metrics(timeline, ego_distance_m, interval_clearances=None):
     target_states = [target for frame in timeline for target in frame["targets"]]
     ttc_values = [
         target["risk"]["ttc_sec"]
@@ -337,14 +484,35 @@ def _build_metrics(timeline, step_sec, ego_distance_m):
     ]
     confidences = [target["confidence"] for target in target_states if target["detected"]]
     warning_frames = [frame for frame in timeline if frame["max_risk_level"] in {"medium", "high"}]
-    high_frames = [frame for frame in timeline if frame["max_risk_level"] == "high"]
+    high_risk_duration_sec = sum(
+        timeline[index + 1]["time_sec"] - frame["time_sec"]
+        for index, frame in enumerate(timeline[:-1])
+        if frame["max_risk_level"] == "high"
+    )
+    collision_times = [
+        target["collision_time_sec"]
+        for target in target_states
+        if target["collision_time_sec"] is not None
+    ]
+    collision_targets = [
+        target
+        for target in target_states
+        if target["collision_time_sec"] is not None and target["collision_ego_speed_kmh"] is not None
+    ]
+    first_collision = min(collision_targets, key=lambda target: target["collision_time_sec"]) if collision_targets else None
+    clearances = [target["clearance_m"] for target in target_states]
+    clearances.extend(interval_clearances or [])
+    collision = any(target["collision"] for target in target_states)
     return {
         "min_ttc_sec": min(ttc_values) if ttc_values else None,
         "first_warning_sec": warning_frames[0]["time_sec"] if warning_frames else None,
-        "high_risk_duration_sec": round(len(high_frames) * step_sec, 2),
+        "high_risk_duration_sec": round(high_risk_duration_sec, 2),
         "average_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0,
         "missed_perception_frames": sum(not target["detected"] for target in target_states),
-        "collision": any(target["collision"] for target in target_states),
+        "collision": collision,
+        "collision_time_sec": min(collision_times) if collision_times else None,
+        "collision_speed_kmh": first_collision["collision_ego_speed_kmh"] if first_collision else None,
+        "min_clearance_m": 0 if collision else (round(min(clearances), 3) if clearances else None),
         "ego_distance_m": round(ego_distance_m, 2),
     }
 
@@ -359,6 +527,12 @@ def simulate_risk(payload):
     brake_deceleration_mps2 = _number(config.get("brake_deceleration_mps2", 6.5), "制动减速度", 0.1, 12)
     aeb_delay_sec = _number(config.get("aeb_delay_sec", 0.3), "AEB 感知决策延迟", 0, 2)
     aeb_ramp_sec = _number(config.get("aeb_ramp_sec", 0.4), "AEB 制动力爬升时间", 0, 3)
+    aeb_safety_margin_m = _number(
+        config.get("aeb_safety_margin_m", AEB_SAFETY_MARGIN_M),
+        "AEB 安全余量",
+        0,
+        20,
+    )
 
     if weather_key not in WEATHER_PROFILES:
         raise ValueError("不支持的天气类型")
@@ -372,13 +546,18 @@ def simulate_risk(payload):
     timeline = []
     ego_distance_m = 0
     current_ego_speed_mps = ego_speed_kmh / 3.6
-    high_risk_since = None
-    aeb_trigger_time = None
+    aeb_request_time = None
+    aeb_activation_time = None
+    aeb_trigger_reason = None
+    aeb_request_ego_distance_m = None
+    aeb_stop_ego_distance_m = None
     next_event_index = 0
-    frame_count = int(duration_sec / step_sec) + 1
+    interval_clearances = []
+    output_time_points = _timeline_points(duration_sec, step_sec, events)
+    time_points = list(output_time_points)
+    available_brake_deceleration = brake_deceleration_mps2 * weather_profile["brake_efficiency"]
 
-    for frame_index in range(frame_count):
-        time_sec = round(frame_index * step_sec, 6)
+    for frame_index, time_sec in enumerate(time_points):
         while next_event_index < len(events) and events[next_event_index]["time_sec"] <= time_sec + 1e-9:
             _apply_event(events[next_event_index], target_states_by_id)
             next_event_index += 1
@@ -395,19 +574,20 @@ def simulate_risk(payload):
             risk = _score_target(target, state, distance_m, current_ego_speed_mps)
             if not detected:
                 risk = {**risk, "level": "low", "score": 0, "perception_limited": True}
-            collision = (
-                abs(distance_m) <= 0.8 and risk["lane_overlap"] >= 0.5
-            ) or (
-                risk["ttc_sec"] is not None
-                and risk["ttc_sec"] <= step_sec
-                and risk["cpa_distance_m"] is not None
-                and risk["cpa_distance_m"] <= COLLISION_RADIUS_M
-            )
+            if (
+                state["collision_time_sec"] is None
+                and abs(distance_m) <= COLLISION_LONGITUDINAL_HALF_LENGTH_M
+                and abs(state["lateral_m"]) <= COLLISION_LATERAL_HALF_WIDTH_M
+            ):
+                state["collision_time_sec"] = time_sec
+                state["collision_ego_speed_kmh"] = round(current_ego_speed_mps * 3.6, 3)
+            collision = state["collision_time_sec"] is not None
             world_position = [round(state["lateral_m"], 3), 0, round(-distance_m, 3)]
             target_state = {
                 "id": target["id"],
                 "class_name": target.get("class_name", "car"),
                 "class_name_cn": CLASS_LABELS.get(target.get("class_name"), target.get("class_name", "目标")),
+                "state": target.get("state"),
                 "distance_m": round(distance_m, 2),
                 "lateral_m": round(state["lateral_m"], 2),
                 "longitudinal_speed_mps": round(state["longitudinal_speed_mps"], 2),
@@ -420,6 +600,10 @@ def simulate_risk(payload):
                 "world_position": world_position,
                 "heading_rad": _target_heading(state),
                 "collision": collision,
+                "collision_predicted": False,
+                "collision_time_sec": state["collision_time_sec"],
+                "collision_ego_speed_kmh": state["collision_ego_speed_kmh"],
+                "clearance_m": round(_collision_clearance(distance_m, state["lateral_m"]), 3),
                 "risk": risk,
             }
             target_states.append(target_state)
@@ -428,75 +612,231 @@ def simulate_risk(payload):
                 max_level = risk["level"]
                 primary_target = target_state
 
-        if max_level == "high":
-            if high_risk_since is None:
-                high_risk_since = time_sec
-        elif aeb_trigger_time is None:
-            high_risk_since = None
+        aeb_candidates = []
+        for target_state in target_states:
+            assessment = _aeb_assessment(
+                target_state,
+                current_ego_speed_mps,
+                available_brake_deceleration,
+                aeb_delay_sec,
+                aeb_ramp_sec,
+                aeb_safety_margin_m,
+            )
+            target_state["aeb_assessment"] = assessment
+            if assessment is not None:
+                aeb_candidates.append(assessment)
+        aeb_candidate = min(aeb_candidates, key=lambda item: item["distance_margin_m"]) if aeb_candidates else None
+        aeb_would_trigger = aeb_candidate is not None and aeb_candidate["distance_margin_m"] <= 0
+        if aeb_would_trigger and max_score < 45:
+            max_score = 45
+            max_level = "medium"
+            primary_target = next(
+                (target for target in target_states if target["id"] == aeb_candidate["target_id"]),
+                primary_target,
+            )
 
-        if (
-            auto_brake
-            and aeb_trigger_time is None
-            and high_risk_since is not None
-            and time_sec - high_risk_since >= aeb_delay_sec
-        ):
-            aeb_trigger_time = high_risk_since + aeb_delay_sec
+        if auto_brake and aeb_request_time is None and aeb_would_trigger:
+            aeb_request_time = time_sec
+            aeb_activation_time = time_sec + aeb_delay_sec
+            aeb_request_ego_distance_m = ego_distance_m
+            aeb_trigger_reason = {
+                "type": "stopping_distance",
+                **aeb_candidate,
+                "message": (
+                    f"{aeb_candidate['target_class_name_cn']}距离 {aeb_candidate['actual_distance_m']:.1f}m，"
+                    f"低于安全需求距离 {aeb_candidate['required_distance_m']:.1f}m"
+                ),
+            }
+            _insert_timeline_point(time_points, aeb_activation_time, duration_sec)
+            if aeb_ramp_sec > 0:
+                ramp_step_sec = min(step_sec, 0.1)
+                ramp_point = aeb_activation_time + ramp_step_sec
+                while ramp_point < aeb_activation_time + aeb_ramp_sec - 1e-9:
+                    _insert_timeline_point(time_points, ramp_point, duration_sec)
+                    ramp_point += ramp_step_sec
+                _insert_timeline_point(time_points, aeb_activation_time + aeb_ramp_sec, duration_sec)
+
+        interval_sec = (
+            time_points[frame_index + 1] - time_sec
+            if frame_index + 1 < len(time_points)
+            else 0
+        )
+        for target_state in target_states:
+            target_state["collision_predicted"] = (
+                target_state["detected"]
+                and interval_sec > 0
+                and target_state["risk"]["ttc_sec"] is not None
+                and target_state["risk"]["ttc_sec"] <= interval_sec
+            )
 
         brake_command_ratio = 0
-        if aeb_trigger_time is not None and current_ego_speed_mps > 0:
+        if aeb_activation_time is not None and current_ego_speed_mps > 0:
             if aeb_ramp_sec == 0:
-                brake_command_ratio = 1
+                brake_command_ratio = 1 if time_sec >= aeb_activation_time else 0
             else:
-                brake_command_ratio = _clamp((time_sec - aeb_trigger_time) / aeb_ramp_sec, 0, 1)
-        effective_deceleration = (
-            brake_deceleration_mps2 * weather_profile["brake_efficiency"] * brake_command_ratio
-        )
+                brake_command_ratio = _clamp((time_sec - aeb_activation_time) / aeb_ramp_sec, 0, 1)
+        effective_deceleration = available_brake_deceleration * brake_command_ratio
         aeb_active = brake_command_ratio > 0
-        timeline.append(
-            {
-                "frame_index": frame_index,
-                "time_sec": round(time_sec, 2),
-                "ego_speed_kmh": round(current_ego_speed_mps * 3.6, 2),
-                "ego_world_position": [0, 0, 0],
-                "ego_travel_distance_m": round(ego_distance_m, 3),
-                "aeb_request_active": aeb_trigger_time is not None,
-                "aeb_active": aeb_active,
-                "brake_command_ratio": round(brake_command_ratio, 3),
-                "commanded_brake_deceleration_mps2": brake_deceleration_mps2 if aeb_trigger_time is not None else 0,
-                "brake_deceleration_mps2": round(effective_deceleration, 3),
-                "max_risk_level": max_level,
-                "max_risk_score": max_score,
-                "primary_target": primary_target,
-                "targets": target_states,
-                "perception_fps": round(25 * weather_profile["fps_factor"] - len(targets) * 0.4, 1),
-                "advice": _advice_for(max_level, primary_target or {}),
-            }
+        is_output_point = any(
+            math.isclose(time_sec, output_time, abs_tol=1e-9)
+            for output_time in output_time_points
         )
+        if is_output_point:
+            timeline.append(
+                {
+                    "frame_index": len(timeline),
+                    "time_sec": round(time_sec, 6),
+                    "ego_speed_kmh": round(current_ego_speed_mps * 3.6, 2),
+                    "ego_world_position": [0, 0, 0],
+                    "ego_travel_distance_m": round(ego_distance_m, 3),
+                    "aeb_request_active": aeb_request_time is not None,
+                    "aeb_active": aeb_active,
+                    "aeb_would_trigger": aeb_would_trigger,
+                    "aeb_trigger_reason": aeb_trigger_reason,
+                    "brake_command_ratio": round(brake_command_ratio, 3),
+                    "commanded_brake_deceleration_mps2": (
+                        brake_deceleration_mps2 if aeb_request_time is not None else 0
+                    ),
+                    "brake_deceleration_mps2": round(effective_deceleration, 3),
+                    "max_risk_level": max_level,
+                    "max_risk_score": max_score,
+                    "primary_target": primary_target,
+                    "targets": target_states,
+                    "perception_fps": round(
+                        25 * weather_profile["fps_factor"] - len(targets) * 0.4,
+                        1,
+                    ),
+                    "advice": _advice_for(max_level, primary_target or {}),
+                }
+            )
 
-        next_ego_speed_mps = max(0, current_ego_speed_mps - effective_deceleration * step_sec)
-        ego_distance_m += (current_ego_speed_mps + next_ego_speed_mps) / 2 * step_sec
-        current_ego_speed_mps = next_ego_speed_mps
+        if interval_sec <= 0:
+            continue
+
+        next_brake_command_ratio = brake_command_ratio
+        if aeb_activation_time is not None and aeb_ramp_sec > 0:
+            next_brake_command_ratio = _clamp(
+                (time_points[frame_index + 1] - aeb_activation_time) / aeb_ramp_sec,
+                0,
+                1,
+            )
+        integration_brake_ratio = (
+            brake_command_ratio
+            if aeb_ramp_sec == 0
+            else (brake_command_ratio + next_brake_command_ratio) / 2
+        )
+        integration_deceleration = available_brake_deceleration * integration_brake_ratio
+        next_ego_speed_mps, ego_distance_delta_m = _integrate_longitudinal_motion(
+            current_ego_speed_mps,
+            -integration_deceleration,
+            interval_sec,
+        )
+        next_ego_distance_m = ego_distance_m + ego_distance_delta_m
         for state in target_states_by_id.values():
             acceleration = state["effective_longitudinal_acceleration_mps2"]
             lateral_acceleration = state["lateral_acceleration_mps2"]
-            next_target_speed = max(0, state["longitudinal_speed_mps"] + acceleration * step_sec)
-            next_lateral_speed = state["lateral_speed_mps"] + lateral_acceleration * step_sec
-            state["longitudinal_m"] += (
-                state["longitudinal_speed_mps"] + next_target_speed
-            ) / 2 * step_sec
-            state["lateral_m"] += (state["lateral_speed_mps"] + next_lateral_speed) / 2 * step_sec
+            start_distance_m = state["longitudinal_m"] - ego_distance_m
+            start_lateral_m = state["lateral_m"]
+            next_target_speed, target_distance_delta_m = _integrate_longitudinal_motion(
+                state["longitudinal_speed_mps"],
+                acceleration,
+                interval_sec,
+            )
+            next_lateral_speed = state["lateral_speed_mps"] + lateral_acceleration * interval_sec
+            next_longitudinal_m = state["longitudinal_m"] + target_distance_delta_m
+            next_lateral_m = state["lateral_m"] + (
+                state["lateral_speed_mps"] + next_lateral_speed
+            ) / 2 * interval_sec
+            motion_checks = max(1, math.ceil(interval_sec / MOTION_CHECK_MAX_STEP_SEC))
+            previous_elapsed_sec = 0
+            previous_distance_m = start_distance_m
+            previous_lateral_m = start_lateral_m
+            for check_index in range(1, motion_checks + 1):
+                elapsed_sec = interval_sec * check_index / motion_checks
+                sampled_ego_speed_mps, sampled_ego_distance_delta_m = _integrate_longitudinal_motion(
+                    current_ego_speed_mps,
+                    -integration_deceleration,
+                    elapsed_sec,
+                )
+                _, sampled_target_distance_delta_m = _integrate_longitudinal_motion(
+                    state["longitudinal_speed_mps"],
+                    acceleration,
+                    elapsed_sec,
+                )
+                sampled_distance_m = start_distance_m + sampled_target_distance_delta_m - sampled_ego_distance_delta_m
+                sampled_lateral_m = start_lateral_m + state["lateral_speed_mps"] * elapsed_sec + (
+                    0.5 * lateral_acceleration * elapsed_sec**2
+                )
+                collision_entry = _collision_entry_fraction(
+                    previous_distance_m,
+                    previous_lateral_m,
+                    sampled_distance_m,
+                    sampled_lateral_m,
+                )
+                interval_clearances.append(
+                    _minimum_interval_clearance(
+                        previous_distance_m,
+                        previous_lateral_m,
+                        sampled_distance_m,
+                        sampled_lateral_m,
+                    )
+                )
+                if state["collision_time_sec"] is None and collision_entry is not None:
+                    collision_elapsed_sec = previous_elapsed_sec + (
+                        elapsed_sec - previous_elapsed_sec
+                    ) * collision_entry
+                    collision_speed_mps, _ = _integrate_longitudinal_motion(
+                        current_ego_speed_mps,
+                        -integration_deceleration,
+                        collision_elapsed_sec,
+                    )
+                    state["collision_time_sec"] = round(time_sec + collision_elapsed_sec, 3)
+                    state["collision_ego_speed_kmh"] = round(collision_speed_mps * 3.6, 3)
+                previous_elapsed_sec = elapsed_sec
+                previous_distance_m = sampled_distance_m
+                previous_lateral_m = sampled_lateral_m
+            state["longitudinal_m"] = next_longitudinal_m
+            state["lateral_m"] = next_lateral_m
             state["longitudinal_speed_mps"] = next_target_speed
             state["lateral_speed_mps"] = next_lateral_speed
+        if (
+            aeb_request_ego_distance_m is not None
+            and aeb_stop_ego_distance_m is None
+            and current_ego_speed_mps > 0
+            and next_ego_speed_mps <= 1e-9
+        ):
+            aeb_stop_ego_distance_m = next_ego_distance_m
+        ego_distance_m = next_ego_distance_m
+        current_ego_speed_mps = next_ego_speed_mps
 
     peak = max(timeline, key=lambda item: item["max_risk_score"]) if timeline else None
-    metrics = _build_metrics(timeline, step_sec, ego_distance_m)
+    metrics = _build_metrics(timeline, ego_distance_m, interval_clearances)
     metrics["average_fps"] = round(
         sum(frame["perception_fps"] for frame in timeline) / len(timeline), 1
     ) if timeline else 0
-    aeb_frames = [frame for frame in timeline if frame["aeb_active"]]
-    metrics["aeb_activation_sec"] = aeb_frames[0]["time_sec"] if aeb_frames else None
+    metrics["aeb_request_sec"] = round(aeb_request_time, 6) if aeb_request_time is not None else None
+    metrics["aeb_activation_sec"] = (
+        round(aeb_activation_time, 6)
+        if aeb_activation_time is not None and aeb_activation_time <= duration_sec
+        else None
+    )
+    metrics["aeb_trigger_reason"] = aeb_trigger_reason
     metrics["aeb_delay_sec"] = aeb_delay_sec
     metrics["aeb_ramp_sec"] = aeb_ramp_sec
+    metrics["aeb_safety_margin_m"] = aeb_safety_margin_m
+    metrics["stopping_distance_m"] = (
+        round(aeb_stop_ego_distance_m - aeb_request_ego_distance_m, 2)
+        if aeb_stop_ego_distance_m is not None and aeb_request_ego_distance_m is not None
+        else None
+    )
+    metrics["estimated_stopping_distance_m"] = None
+    if aeb_request_ego_distance_m is not None:
+        distance_since_request_m = ego_distance_m - aeb_request_ego_distance_m
+        remaining_braking_distance_m = current_ego_speed_mps**2 / (2 * available_brake_deceleration)
+        metrics["estimated_stopping_distance_m"] = round(
+            distance_since_request_m + remaining_braking_distance_m,
+            2,
+        )
     metrics["final_speed_kmh"] = timeline[-1]["ego_speed_kmh"] if timeline else ego_speed_kmh
     min_ttc_text = f"{metrics['min_ttc_sec']}s" if metrics["min_ttc_sec"] is not None else "无接近冲突"
     return {
@@ -519,6 +859,7 @@ def simulate_risk(payload):
         "step_sec": step_sec,
         "target_count": len(targets),
         "auto_brake": auto_brake,
+        "aeb_safety_margin_m": aeb_safety_margin_m,
         "peak_risk": {
             "level": peak["max_risk_level"] if peak else "low",
             "score": peak["max_risk_score"] if peak else 0,

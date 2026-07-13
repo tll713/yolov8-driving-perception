@@ -75,7 +75,7 @@ class DemoRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data["scenario"], "front_car_brake")
-        self.assertEqual(len(data["timeline"]), 3)
+        self.assertEqual([frame["time_sec"] for frame in data["timeline"]], [0, 1, 1.5, 2])
         self.assertIn("peak_risk", data)
 
     def test_custom_simulation_scenario_endpoints(self):

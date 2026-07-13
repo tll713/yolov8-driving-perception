@@ -32,6 +32,7 @@ class SimulationScenarioServiceTest(unittest.TestCase):
                 "weather": "rain",
                 "ego_speed_kmh": 35,
                 "duration_sec": 3,
+                "aeb_safety_margin_m": 3,
                 "targets": [
                     {
                         "id": "person",
@@ -47,6 +48,7 @@ class SimulationScenarioServiceTest(unittest.TestCase):
         )
 
         self.assertTrue(saved["key"].startswith("custom:"))
+        self.assertEqual(saved["aeb_safety_margin_m"], 3)
         self.assertEqual(list_custom_scenarios()[0]["name"], "自定义横穿场景")
 
         updated = save_custom_scenario({**saved, "name": "更新后的场景"})
@@ -67,6 +69,12 @@ class SimulationScenarioServiceTest(unittest.TestCase):
                     ],
                 }
             )
+
+        self.assertFalse(self.scenario_file.exists())
+
+    def test_empty_target_list_is_rejected_before_persistence(self):
+        with self.assertRaisesRegex(ValueError, "至少需要一个目标"):
+            save_custom_scenario({"name": "空场景", "targets": []})
 
         self.assertFalse(self.scenario_file.exists())
 

@@ -792,9 +792,9 @@ const SimulationPanel = {
         comparisonChartPoints(result) {
             const timeline = result?.timeline || []
             if (!timeline.length) return ''
-            const last = Math.max(1, timeline.length - 1)
-            return timeline.map((item, index) => {
-                const x = 8 + index / last * 284
+            const duration = Math.max(Number(result.duration_sec || 0), 0.001)
+            return timeline.map(item => {
+                const x = 8 + Number(item.time_sec || 0) / duration * 284
                 const y = 92 - item.max_risk_score * 0.78
                 return `${x.toFixed(1)},${y.toFixed(1)}`
             }).join(' ')
@@ -803,14 +803,23 @@ const SimulationPanel = {
             if (!this.timeline.length || this.isPlaying) return
             if (this.frameIndex >= this.timeline.length - 1) this.frameIndex = 0
             this.isPlaying = true
-            const interval = Math.max(80, (this.result.step_sec * 1000) / this.playbackRate)
-            this.playbackTimer = setInterval(() => {
-                if (this.frameIndex >= this.timeline.length - 1) return this.stopPlayback()
-                this.frameIndex += 1
-            }, interval)
+            const scheduleNextFrame = () => {
+                if (!this.isPlaying || this.frameIndex >= this.timeline.length - 1) {
+                    this.stopPlayback()
+                    return
+                }
+                const currentTime = Number(this.timeline[this.frameIndex]?.time_sec || 0)
+                const nextTime = Number(this.timeline[this.frameIndex + 1]?.time_sec || currentTime)
+                const delay = Math.max(16, (nextTime - currentTime) * 1000 / this.playbackRate)
+                this.playbackTimer = setTimeout(() => {
+                    this.frameIndex += 1
+                    scheduleNextFrame()
+                }, delay)
+            }
+            scheduleNextFrame()
         },
         stopPlayback() {
-            if (this.playbackTimer) clearInterval(this.playbackTimer)
+            if (this.playbackTimer) clearTimeout(this.playbackTimer)
             this.playbackTimer = null
             this.isPlaying = false
         },
@@ -838,9 +847,9 @@ const SimulationPanel = {
             renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
             const scene = new THREE.Scene()
-            const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 220)
-            camera.position.set(0, 3.0, 6.6)
-            camera.lookAt(0, 1.08, -36)
+            const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 240)
+            camera.position.set(0, 1.65, 6.2)
+            camera.lookAt(0, 1.15, -42)
 
             const hemiLight = new THREE.HemisphereLight(0xc7e2ef, 0x35402d, 2.25)
             const sunLight = new THREE.DirectionalLight(0xfff3d6, 3.2)
@@ -898,7 +907,7 @@ const SimulationPanel = {
             scene.add(ground)
 
             const road = new THREE.Mesh(
-                new THREE.PlaneGeometry(18, 190),
+                new THREE.PlaneGeometry(14, 190),
                 new THREE.MeshStandardMaterial({ color: 0x5d6263, map: asphaltTexture, roughness: 0.94, metalness: 0.02 })
             )
             road.rotation.x = -Math.PI / 2
@@ -927,8 +936,8 @@ const SimulationPanel = {
                 return arrow
             }
             const trafficProps = []
-            for (const z of [-20, -64, -108, -152]) {
-                for (const x of [-5.2, 0, 5.2]) {
+            for (const z of [-46, -104, -158]) {
+                for (const x of [-4.4, 0, 4.4]) {
                     const arrow = createRoadArrow(x, z, 0)
                     trafficProps.push(arrow)
                     scene.add(arrow)
@@ -958,7 +967,7 @@ const SimulationPanel = {
             }
 
             const shoulderMaterial = new THREE.MeshStandardMaterial({ color: 0x2f3739, roughness: 0.98 })
-            for (const x of [-11.3, 11.3]) {
+            for (const x of [-9.3, 9.3]) {
                 const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 190), shoulderMaterial)
                 shoulder.rotation.x = -Math.PI / 2
                 shoulder.position.set(x, 0.018, -84)
@@ -969,7 +978,7 @@ const SimulationPanel = {
             const markerGeometry = new THREE.BoxGeometry(0.13, 0.025, 3.4)
             const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xf2edcf, emissive: 0x312e21 })
             const laneMarkers = []
-            for (const x of [-3, 3]) {
+            for (const x of [-2.25, 2.25]) {
                 for (let index = 0; index < 24; index += 1) {
                     const marker = new THREE.Mesh(markerGeometry, markerMaterial)
                     marker.position.set(x, 0.04, 8 - index * 7.5)
@@ -979,7 +988,7 @@ const SimulationPanel = {
             }
             const edgeGeometry = new THREE.BoxGeometry(0.18, 0.035, 190)
             const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xe9d88c })
-            for (const x of [-8.2, 8.2]) {
+            for (const x of [-6.55, 6.55]) {
                 const edge = new THREE.Mesh(edgeGeometry, edgeMaterial)
                 edge.position.set(x, 0.045, -84)
                 scene.add(edge)
@@ -988,10 +997,10 @@ const SimulationPanel = {
             const roadsideDetails = []
             const rumbleGeometry = new THREE.BoxGeometry(0.55, 0.035, 0.16)
             const rumbleMaterial = new THREE.MeshStandardMaterial({ color: 0xd9d0a0, roughness: 0.82 })
-            for (const x of [-8.9, 8.9]) {
-                for (let index = 0; index < 54; index += 1) {
+            for (const x of [-6.85, 6.85]) {
+                for (let index = 0; index < 30; index += 1) {
                     const strip = new THREE.Mesh(rumbleGeometry, rumbleMaterial)
-                    strip.position.set(x, 0.068, 9 - index * 3.3)
+                    strip.position.set(x, 0.068, 9 - index * 6.1)
                     roadsideDetails.push(strip)
                     scene.add(strip)
                 }
@@ -1011,49 +1020,99 @@ const SimulationPanel = {
                     const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.1, 0.16), postMaterial)
                     post.position.set(side * 11.0, 0.54, 0.2 - index * 14)
                     post.castShadow = true
-                    sceneryDetails.push(post)
+                    roadsideDetails.push(post)
                     scene.add(post)
                     const reflector = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.28), reflectorMaterial)
                     reflector.position.set(side * 10.9, 0.92, 0.2 - index * 14)
                     reflector.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2
-                    sceneryDetails.push(reflector)
+                    roadsideDetails.push(reflector)
                     scene.add(reflector)
                 }
             }
 
-            const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0x56636a, roughness: 0.88 })
-            const darkBuildingMaterial = new THREE.MeshStandardMaterial({ color: 0x38444b, roughness: 0.9 })
-            const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x7fb0c7, emissive: 0x123040, emissiveIntensity: 0.35, roughness: 0.35 })
-            for (let index = 0; index < 15; index += 1) {
+            const facadeMaterials = [0x46545b, 0x595852, 0x41565c, 0x52606a].map(color => (
+                new THREE.MeshStandardMaterial({ color, roughness: 0.84, metalness: 0.03 })
+            ))
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0x739bb0,
+                emissive: 0x102a38,
+                emissiveIntensity: 0.28,
+                roughness: 0.24,
+                metalness: 0.12,
+            })
+            const groundGlassMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8eb1bd,
+                emissive: 0x17333c,
+                emissiveIntensity: 0.22,
+                roughness: 0.18,
+                metalness: 0.08,
+            })
+            const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x343d42, roughness: 0.82 })
+            for (let index = 0; index < 10; index += 1) {
                 const height = 5 + index % 4 * 2.2
                 for (const side of [-1, 1]) {
+                    const width = 5 + index % 3
+                    const depth = 7
+                    const buildingZ = -12 - index * 17 - (side > 0 ? 6 : 0)
                     const building = new THREE.Mesh(
-                        new THREE.BoxGeometry(5 + index % 3, height, 7),
-                        index % 2 ? buildingMaterial : darkBuildingMaterial
+                        new THREE.BoxGeometry(width, height, depth),
+                        facadeMaterials[(index + (side > 0 ? 1 : 0)) % facadeMaterials.length]
                     )
-                    building.position.set(side * (13 + index % 3 * 2.5), height / 2, -10 - index * 11)
+                    building.position.set(side * (13 + index % 3 * 2.5), height / 2, buildingZ)
                     building.castShadow = true
-                    sceneryDetails.push(building)
-                    scene.add(building)
+                    const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 0.25, 0.22, depth + 0.25), roofMaterial)
+                    roof.position.set(building.position.x, height + 0.1, building.position.z)
+                    roof.castShadow = true
+                    const groundGlass = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.05, depth * 0.72), groundGlassMaterial)
+                    groundGlass.position.set(
+                        building.position.x - side * (width / 2 + 0.035),
+                        0.72,
+                        building.position.z
+                    )
+                    const awning = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, depth * 0.62), roofMaterial)
+                    awning.position.set(
+                        building.position.x - side * (width / 2 + 0.32),
+                        1.42,
+                        building.position.z
+                    )
+                    sceneryDetails.push(building, roof, groundGlass, awning)
+                    scene.add(building, roof, groundGlass, awning)
                     for (let floor = 1; floor < height - 1; floor += 1.8) {
-                        const windowBand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.38, 4.2), windowMaterial)
-                        windowBand.position.set(building.position.x - side * ((5 + index % 3) / 2 + 0.025), floor, building.position.z)
-                        sceneryDetails.push(windowBand)
-                        scene.add(windowBand)
+                        for (const pane of [-1, 0, 1]) {
+                            const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.54, 1.35), windowMaterial)
+                            windowPane.position.set(
+                                building.position.x - side * (width / 2 + 0.028),
+                                floor,
+                                building.position.z + pane * 1.85
+                            )
+                            sceneryDetails.push(windowPane)
+                            scene.add(windowPane)
+                        }
                     }
                 }
             }
 
             const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x60412b, roughness: 0.9 })
-            const crownMaterial = new THREE.MeshStandardMaterial({ color: 0x2f6b45, roughness: 0.96 })
-            for (let index = 0; index < 18; index += 1) {
+            const crownMaterials = [0x346f49, 0x2d6141, 0x3d7b50].map(color => (
+                new THREE.MeshStandardMaterial({ color, roughness: 0.94 })
+            ))
+            for (let index = 0; index < 10; index += 1) {
                 for (const side of [-1, 1]) {
                     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 1.8, 8), trunkMaterial)
-                    trunk.position.set(side * (15.5 + index % 2 * 2.5), 0.9, -8 - index * 9.4)
+                    trunk.position.set(side * (15.5 + index % 2 * 2.5), 0.9, -10 - index * 17 - (side > 0 ? 8 : 0))
                     trunk.castShadow = true
-                    const crown = new THREE.Mesh(new THREE.ConeGeometry(1.25 + index % 3 * 0.18, 3.2, 10), crownMaterial)
-                    crown.position.set(trunk.position.x, 2.85, trunk.position.z)
-                    crown.castShadow = true
+                    const crown = new THREE.Group()
+                    for (const [offsetX, offsetY, scale] of [[0, 0, 1], [-0.55, -0.15, 0.72], [0.55, -0.08, 0.78]]) {
+                        const foliage = new THREE.Mesh(
+                            new THREE.IcosahedronGeometry(1.25 + index % 3 * 0.12, 1),
+                            crownMaterials[(index + (offsetX > 0 ? 1 : 0)) % crownMaterials.length]
+                        )
+                        foliage.position.set(offsetX, offsetY, 0)
+                        foliage.scale.set(scale, scale * 1.08, scale)
+                        foliage.castShadow = true
+                        crown.add(foliage)
+                    }
+                    crown.position.set(trunk.position.x, 2.95, trunk.position.z)
                     sceneryDetails.push(trunk, crown)
                     scene.add(trunk, crown)
                 }
@@ -1061,36 +1120,16 @@ const SimulationPanel = {
 
             const signMaterial = new THREE.MeshStandardMaterial({ color: 0x1f7f63, roughness: 0.55, metalness: 0.05 })
             const signTextMaterial = new THREE.MeshStandardMaterial({ color: 0xdfeee8, emissive: 0x18342c, emissiveIntensity: 0.5 })
-            const signFaceMaterial = new THREE.MeshStandardMaterial({ color: 0xf3f4ec, roughness: 0.55 })
-            const signRedMaterial = new THREE.MeshStandardMaterial({ color: 0xd73535, emissive: 0x5b0b0b, emissiveIntensity: 0.35 })
             const warningMaterial = new THREE.MeshStandardMaterial({ color: 0xf6c84f, emissive: 0x4b3408, emissiveIntensity: 0.22, roughness: 0.52 })
-            for (let index = 0; index < 4; index += 1) {
+            for (let index = 0; index < 2; index += 1) {
                 const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.6, 10), postMaterial)
-                pole.position.set(-10.3, 2.3, -22 - index * 38)
+                pole.position.set(-10.3, 2.3, -72 - index * 68)
                 const sign = new THREE.Mesh(new THREE.BoxGeometry(2.9, 1.15, 0.08), signMaterial)
                 sign.position.set(-10.3, 4.25, pole.position.z)
                 const mark = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.095), signTextMaterial)
                 mark.position.set(-10.3, 4.28, pole.position.z + 0.055)
                 sceneryDetails.push(pole, sign, mark)
                 scene.add(pole, sign, mark)
-            }
-            for (let index = 0; index < 5; index += 1) {
-                const z = -16 - index * 34
-                const side = index % 2 ? -1 : 1
-                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 2.6, 10), postMaterial)
-                pole.position.set(side * 9.8, 1.3, z)
-                const face = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.045, 32), signFaceMaterial)
-                face.rotation.x = Math.PI / 2
-                face.position.set(side * 9.8, 2.7, z)
-                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.53, 0.055, 8, 32), signRedMaterial)
-                ring.rotation.x = Math.PI / 2
-                ring.position.copy(face.position)
-                const markA = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 0.05), signRedMaterial)
-                markA.position.set(side * 9.8, 2.7, z + 0.035)
-                const markB = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.05), signRedMaterial)
-                markB.position.set(side * 9.8, 2.7, z + 0.04)
-                sceneryDetails.push(pole, face, ring, markA, markB)
-                scene.add(pole, face, ring, markA, markB)
             }
             for (let index = 0; index < 4; index += 1) {
                 const board = new THREE.Mesh(new THREE.ConeGeometry(0.68, 0.08, 3), warningMaterial)
@@ -1119,14 +1158,14 @@ const SimulationPanel = {
             const streetLights = []
             const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x2e363b, roughness: 0.75 })
             const lampMaterial = new THREE.MeshStandardMaterial({ color: 0xfff0ba, emissive: 0xffd66b, emissiveIntensity: 1.4 })
-            for (let index = 0; index < 12; index += 1) {
+            for (let index = 0; index < 8; index += 1) {
                 for (const side of [-1, 1]) {
                     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 5.6, 10), poleMaterial)
-                    pole.position.set(side * 9.4, 2.8, -10 - index * 14)
+                    pole.position.set(side * 8.2, 2.8, -10 - index * 22 - (side > 0 ? 8 : 0))
                     const arm = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.08), poleMaterial)
-                    arm.position.set(side * 8.9, 5.55, pole.position.z)
+                    arm.position.set(side * 7.7, 5.55, pole.position.z)
                     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), lampMaterial)
-                    bulb.position.set(side * 8.35, 5.48, pole.position.z)
+                    bulb.position.set(side * 7.15, 5.48, pole.position.z)
                     sceneryDetails.push(pole, arm, bulb)
                     scene.add(pole, arm, bulb)
                     if (index % 3 === 0) {
@@ -1225,7 +1264,7 @@ const SimulationPanel = {
                     positions.needsUpdate = true
                 }
                 camera.position.x = Math.sin(now * 0.0017) * 0.035
-                camera.position.y = 3.0 + Math.sin(now * 0.0024) * 0.018
+                camera.position.y = 1.65 + Math.sin(now * 0.0024) * 0.014
                 renderer.render(scene, camera)
                 this.threeAnimationFrame = requestAnimationFrame(animate)
             }
@@ -1247,12 +1286,9 @@ const SimulationPanel = {
             const load = url => new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject))
             Promise.all([
                 load('/static/models/simulation/ferrari.glb'),
-                load('/static/models/simulation/soldier.glb'),
-            ]).then(([carGltf, personGltf]) => {
+            ]).then(([carGltf]) => {
                 const car = this.normalizeThreeAsset(carGltf.scene, { length: 4.5, rotateToRoad: true })
-                const person = this.normalizeThreeAsset(personGltf.scene, { height: 1.82, rotateY: Math.PI })
-                person.userData.animations = personGltf.animations || []
-                this.threeAssetTemplates = { car, person }
+                this.threeAssetTemplates = { car }
                 this.assetStatus = 'ready'
                 this.buildAmbientTraffic()
                 this.resetThreeTargets()
@@ -1288,34 +1324,42 @@ const SimulationPanel = {
             wrapper.add(model)
             return wrapper
         },
-        makeAssetCar(color = 0xb73038) {
+        makeAssetCar(color = 0xb73038, options = {}) {
             const THREE = window.THREE
+            if (options.sedan) return this.makeThreeVehicle(color)
             const car = this.threeAssetTemplates?.car?.clone(true)
             if (!car) return this.makeThreeVehicle(color)
-            let tinted = false
             car.traverse(object => {
-                if (!object.isMesh || tinted || !object.material) return
+                if (!object.isMesh || !object.material) return
                 object.material = object.material.clone()
-                object.material.color = new THREE.Color(color)
+                if (object.material.color && !object.material.transparent) {
+                    const original = object.material.color
+                    const brightness = Math.max(original.r, original.g, original.b)
+                    if (brightness > 0.12) object.material.color.lerp(new THREE.Color(color), 0.72)
+                }
                 object.material.roughness = Math.min(object.material.roughness ?? 0.5, 0.42)
-                tinted = true
             })
             return car
+        },
+        makeAssetPerson() {
+            return this.makeThreePerson({ jacket: 0x3f7892, pants: 0x26333d })
         },
         buildAmbientTraffic() {
             if (!this.threeScene) return
             this.threeAmbientCars.forEach(car => this.threeScene.remove(car))
             this.threeAmbientCars = []
-            const traffic = [
-                { x: -3.1, z: -42, color: 0x2d566f },
-                { x: 3.15, z: -68, color: 0xd0d3d4 },
-                { x: -3.05, z: -102, color: 0x5f666b },
-                { x: 3.2, z: -132, color: 0xb58a32 },
+            const isIntersection = ['red_light', 'mixed_intersection', 'pedestrian_crossing'].includes(this.result?.scenario)
+            const traffic = isIntersection ? [
+                { x: -4.4, z: -92, color: 0x3f5968 },
+                { x: 4.4, z: -136, color: 0x8e969a },
+            ] : [
+                { x: -4.4, z: -72, color: 0x2d566f },
+                { x: 4.4, z: -118, color: 0x8e969a },
             ]
             traffic.forEach(item => {
-                const car = this.makeAssetCar(item.color)
+                const car = this.makeAssetCar(item.color, { sedan: true })
                 car.position.set(item.x, 0.02, item.z)
-                car.rotation.y = Math.PI
+                car.rotation.y = 0
                 car.scale.multiplyScalar(0.92)
                 this.threeAmbientCars.push(car)
                 this.threeScene.add(car)
@@ -1337,28 +1381,47 @@ const SimulationPanel = {
             const THREE = window.THREE
             const group = new THREE.Group()
             const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.38, metalness: 0.42 })
-            const glassMaterial = new THREE.MeshStandardMaterial({ color: 0x8fb8c8, roughness: 0.12, metalness: 0.25, transparent: true, opacity: 0.82 })
+            const glassMaterial = new THREE.MeshStandardMaterial({ color: 0x7896a3, roughness: 0.1, metalness: 0.32, transparent: true, opacity: 0.86 })
             const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x12171b, roughness: 0.72, metalness: 0.2 })
+            const chromeMaterial = new THREE.MeshStandardMaterial({ color: 0xbec5c8, roughness: 0.28, metalness: 0.72 })
             const lightMaterial = new THREE.MeshStandardMaterial({ color: 0xf7f0d5, emissive: 0xffe8a6, emissiveIntensity: 1.2 })
             const tailMaterial = new THREE.MeshStandardMaterial({ color: 0xb81f26, emissive: 0xff1f2d, emissiveIntensity: 0.9 })
-            const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.72, 3.8), bodyMaterial)
-            body.position.y = 0.62
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.62, 3.9), bodyMaterial)
+            body.position.y = 0.59
             body.castShadow = true
-            const hood = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.12, 1.05), bodyMaterial)
-            hood.position.set(0, 1.03, -1.05)
+            const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.22, 3.55), trimMaterial)
+            lowerBody.position.y = 0.34
+            const hood = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 1.12), bodyMaterial)
+            hood.position.set(0, 0.96, -1.08)
             hood.castShadow = true
-            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.7, 1.45), glassMaterial)
-            cabin.position.set(0, 1.27, 0.35)
+            const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.14, 0.72), bodyMaterial)
+            trunk.position.set(0, 0.94, 1.45)
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.64, 1.55), glassMaterial)
+            cabin.position.set(0, 1.25, 0.26)
             cabin.castShadow = true
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.1, 1.12), bodyMaterial)
+            roof.position.set(0, 1.59, 0.32)
             const grille = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.18, 0.06), trimMaterial)
-            grille.position.set(0, 0.69, -1.93)
-            group.add(body, hood, cabin, grille)
+            grille.position.set(0, 0.62, -1.98)
+            const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.14, 0.1), chromeMaterial)
+            frontBumper.position.set(0, 0.39, -1.99)
+            const rearBumper = frontBumper.clone()
+            rearBumper.position.z = 1.99
+            const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.025), new THREE.MeshStandardMaterial({ color: 0xe8ecee, roughness: 0.45 }))
+            frontPlate.position.set(0, 0.58, -2.035)
+            group.add(body, lowerBody, hood, trunk, cabin, roof, grille, frontBumper, rearBumper, frontPlate)
             for (const x of [-0.55, 0.55]) {
                 const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.13, 0.08), lightMaterial)
                 lamp.position.set(x, 0.83, -1.94)
                 const tail = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.13, 0.08), tailMaterial)
                 tail.position.set(x, 0.82, 1.94)
                 group.add(lamp, tail)
+            }
+            for (const side of [-1, 1]) {
+                const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.13, 0.28), bodyMaterial)
+                mirror.position.set(side * 0.86, 1.27, -0.22)
+                mirror.castShadow = true
+                group.add(mirror)
             }
             for (const x of [-0.98, 0.98]) {
                 for (const z of [-1.15, 1.15]) {
@@ -1369,9 +1432,13 @@ const SimulationPanel = {
                     wheel.rotation.z = Math.PI / 2
                     wheel.position.set(x, 0.36, z)
                     wheel.castShadow = true
-                    group.add(wheel)
+                    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.235, 16), chromeMaterial)
+                    hub.rotation.z = Math.PI / 2
+                    hub.position.copy(wheel.position)
+                    group.add(wheel, hub)
                 }
             }
+            group.userData.brakeLightMaterial = tailMaterial
             return group
         },
         makeThreePerson(options = {}) {
@@ -1382,34 +1449,35 @@ const SimulationPanel = {
             const bodyMaterial = new THREE.MeshStandardMaterial({ color: jacket, roughness: 0.78 })
             const pantsMaterial = new THREE.MeshStandardMaterial({ color: pants, roughness: 0.86 })
             const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd8a47f, roughness: 0.82 })
+            const hairMaterial = new THREE.MeshStandardMaterial({ color: 0x29231f, roughness: 0.9 })
             const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x181b1f, roughness: 0.9 })
-            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.9, 6, 12), bodyMaterial)
-            body.position.y = 1.18
+            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.72, 6, 12), bodyMaterial)
+            body.position.y = 1.2
             body.castShadow = true
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 12), skinMaterial)
-            head.position.y = 1.93
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), skinMaterial)
+            head.position.y = 1.88
             head.castShadow = true
-            const backpack = new THREE.Mesh(
-                new THREE.BoxGeometry(0.34, 0.54, 0.16),
-                new THREE.MeshStandardMaterial({ color: 0x39424b, roughness: 0.82 })
-            )
-            backpack.position.set(0, 1.25, -0.23)
-            backpack.castShadow = true
-            group.add(body, head, backpack)
+            const hair = new THREE.Mesh(new THREE.SphereGeometry(0.205, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), hairMaterial)
+            hair.position.y = 1.91
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.16, 10), skinMaterial)
+            neck.position.y = 1.66
+            group.add(body, head, hair, neck)
             for (const side of [-1, 1]) {
-                const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.66, 5, 8), skinMaterial)
-                arm.position.set(side * 0.34, 1.15, 0.04)
-                arm.rotation.z = side * 0.18
+                const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.56, 5, 8), bodyMaterial)
+                arm.position.set(side * 0.32, 1.2, 0.02)
+                arm.rotation.z = side * 0.08
                 arm.userData.walkPhase = side
                 arm.castShadow = true
-                const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.72, 5, 8), pantsMaterial)
-                leg.position.set(side * 0.11, 0.48, 0)
+                const hand = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), skinMaterial)
+                hand.position.set(side * 0.34, 0.84, 0.02)
+                const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.66, 5, 8), pantsMaterial)
+                leg.position.set(side * 0.105, 0.48, 0)
                 leg.userData.walkPhase = -side
                 leg.castShadow = true
                 const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.28), shoeMaterial)
                 shoe.position.set(side * 0.11, 0.08, 0.08)
                 shoe.castShadow = true
-                group.add(arm, leg, shoe)
+                group.add(arm, hand, leg, shoe)
             }
             group.userData.isProceduralPerson = true
             group.userData.walkAmplitude = options.walkAmplitude ?? 0.32
@@ -1441,53 +1509,153 @@ const SimulationPanel = {
             const group = new THREE.Group()
             const tireMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 0.95 })
             const frameMaterial = new THREE.MeshStandardMaterial({ color: 0xe0a52b, roughness: 0.42, metalness: 0.35 })
-            for (const z of [-1.15, 1.15]) {
-                const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.11, 12, 24), tireMaterial)
+            const metalMaterial = new THREE.MeshStandardMaterial({ color: 0x707a80, roughness: 0.38, metalness: 0.62 })
+            const seatMaterial = new THREE.MeshStandardMaterial({ color: 0x171a1d, roughness: 0.82 })
+            const jacketMaterial = new THREE.MeshStandardMaterial({ color: 0x346f9f, roughness: 0.72 })
+            const pantsMaterial = new THREE.MeshStandardMaterial({ color: 0x20272d, roughness: 0.86 })
+            const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd8a47f, roughness: 0.82 })
+            const helmetMaterial = new THREE.MeshStandardMaterial({ color: 0x252a2e, roughness: 0.4, metalness: 0.28 })
+            const headlightMaterial = new THREE.MeshStandardMaterial({ color: 0xf7f0d5, emissive: 0xffe5a0, emissiveIntensity: 2.2 })
+            const tailMaterial = new THREE.MeshStandardMaterial({ color: 0xc7242d, emissive: 0xff2634, emissiveIntensity: 1.4 })
+
+            for (const z of [-1.08, 1.08]) {
+                const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.1, 12, 26), tireMaterial)
                 wheel.rotation.y = Math.PI / 2
-                wheel.position.set(0, 0.48, z)
-                group.add(wheel)
+                wheel.position.set(0, 0.56, z)
+                const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.18, 16), metalMaterial)
+                hub.rotation.z = Math.PI / 2
+                hub.position.copy(wheel.position)
+                group.add(wheel, hub)
             }
-            const frame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 1.85), frameMaterial)
-            frame.position.y = 0.77
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.72), frameMaterial)
+            frame.position.y = 0.82
             frame.rotation.x = -0.08
-            const tank = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 12), frameMaterial)
-            tank.scale.set(0.8, 0.72, 1.15)
-            tank.position.set(0, 1.05, 0.22)
-            const rider = this.makeThreePerson()
-            rider.scale.setScalar(0.78)
-            rider.position.set(0, 0.72, 0.3)
-            rider.rotation.x = -0.18
-            group.add(frame, tank, rider)
+            const engine = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.46, 0.58), metalMaterial)
+            engine.position.set(0, 0.76, 0.18)
+            const tank = new THREE.Mesh(new THREE.SphereGeometry(0.4, 18, 12), frameMaterial)
+            tank.scale.set(0.82, 0.68, 1.08)
+            tank.position.set(0, 1.08, -0.12)
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.72), seatMaterial)
+            seat.position.set(0, 1.13, 0.52)
+            const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 1.02, 10), metalMaterial)
+            fork.position.set(0, 0.98, -0.88)
+            fork.rotation.x = 0.42
+            const handlebar = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.06, 0.08), metalMaterial)
+            handlebar.position.set(0, 1.34, -0.7)
+            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.88, 12), metalMaterial)
+            exhaust.rotation.x = Math.PI / 2
+            exhaust.position.set(-0.32, 0.7, 0.55)
+            const headlight = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), headlightMaterial)
+            headlight.scale.z = 0.5
+            headlight.position.set(0, 1.2, -1.13)
+            const tailLight = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.08), tailMaterial)
+            tailLight.position.set(0, 1.02, 1.13)
+            const rearFender = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.7), seatMaterial)
+            rearFender.position.set(0, 0.9, 0.86)
+            const plate = new THREE.Mesh(
+                new THREE.BoxGeometry(0.28, 0.16, 0.04),
+                new THREE.MeshStandardMaterial({ color: 0xe7ebed, roughness: 0.5 })
+            )
+            plate.position.set(0, 0.82, 1.15)
+
+            const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.58, 6, 12), jacketMaterial)
+            torso.position.set(0, 1.62, 0.22)
+            torso.rotation.x = -0.32
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), skinMaterial)
+            head.position.set(0, 2.05, -0.16)
+            const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.225, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), helmetMaterial)
+            helmet.position.set(0, 2.09, -0.16)
+            group.add(frame, engine, tank, seat, fork, handlebar, exhaust, headlight, tailLight, rearFender, plate, torso, head, helmet)
+
+            for (const side of [-1, 1]) {
+                const indicator = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.065, 10, 8),
+                    new THREE.MeshStandardMaterial({ color: 0xe7a52d, emissive: 0xff9d18, emissiveIntensity: 1.6 })
+                )
+                indicator.position.set(side * 0.3, 1.03, 1.12)
+                const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.44, 5, 8), jacketMaterial)
+                arm.position.set(side * 0.25, 1.53, -0.27)
+                arm.rotation.set(-0.9, 0, side * 0.12)
+                const hand = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 8), skinMaterial)
+                hand.position.set(side * 0.29, 1.33, -0.68)
+                const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.5, 5, 8), pantsMaterial)
+                leg.position.set(side * 0.2, 1.08, 0.4)
+                leg.rotation.set(0.68, 0, side * 0.06)
+                const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.08, 0.25), seatMaterial)
+                shoe.position.set(side * 0.21, 0.82, 0.67)
+                group.add(indicator, arm, hand, leg, shoe)
+            }
+            group.traverse(object => {
+                if (object.isMesh) object.castShadow = true
+            })
             return group
         },
-        makeThreeTrafficLight() {
+        makeThreeTrafficLight(options = {}) {
             const THREE = window.THREE
             const group = new THREE.Group()
-            const pole = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.09, 0.11, 4.8, 12),
-                new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 })
-            )
-            pole.position.y = 2.4
+            const withPole = options.withPole !== false
+            const activeState = options.state || 'red'
+            const headY = withPole ? 4.6 : 0
+            const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.72, metalness: 0.18 })
+            if (withPole) {
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 4.7, 12), poleMaterial)
+                pole.position.y = 2.35
+                pole.castShadow = true
+                group.add(pole)
+            }
             const housing = new THREE.Mesh(
-                new THREE.BoxGeometry(0.8, 1.8, 0.55),
-                new THREE.MeshStandardMaterial({ color: 0x171b1d })
+                new THREE.BoxGeometry(0.68, 1.62, 0.5),
+                new THREE.MeshStandardMaterial({ color: 0x151a1d, roughness: 0.58, metalness: 0.18 })
             )
-            housing.position.y = 4.65
-            const red = new THREE.Mesh(
-                new THREE.SphereGeometry(0.22, 16, 12),
-                new THREE.MeshStandardMaterial({ color: 0xff2d2d, emissive: 0xff0000, emissiveIntensity: 3 })
-            )
-            red.position.set(0, 5.05, 0.3)
-            group.add(pole, housing, red)
+            housing.position.y = headY
+            housing.castShadow = true
+            group.add(housing)
+            const lights = [
+                { key: 'red', color: 0xf04444, y: 0.48 },
+                { key: 'amber', color: 0xe6a832, y: 0 },
+                { key: 'green', color: 0x43b86b, y: -0.48 },
+            ]
+            lights.forEach(light => {
+                const active = light.key === activeState
+                const lens = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.19, 20, 14),
+                    new THREE.MeshStandardMaterial({
+                        color: light.color,
+                        emissive: light.color,
+                        emissiveIntensity: active ? 3.2 : 0.08,
+                        roughness: 0.28,
+                    })
+                )
+                lens.scale.z = 0.42
+                lens.position.set(0, headY + light.y, 0.27)
+                group.add(lens)
+            })
             return group
         },
         makeThreeTarget(target) {
             if (target.class_name === 'person') {
-                return this.makeThreePerson()
+                return this.makeAssetPerson()
             }
-            if (['traffic light', 'traffic_light'].includes(target.class_name)) return this.makeThreeTrafficLight()
-            if (target.class_name === 'motorcycle' || target.class_name === 'bicycle') return this.makeThreeMotorcycle()
-            return this.makeAssetCar(0xb7c1c8)
+            if (['traffic light', 'traffic_light'].includes(target.class_name)) return new window.THREE.Group()
+            if (target.class_name === 'motorcycle') {
+                const motorcycle = this.makeThreeMotorcycle()
+                motorcycle.scale.setScalar(1.08)
+                return motorcycle
+            }
+            if (target.class_name === 'bicycle') return this.makeThreeCyclist()
+            if (target.class_name === 'car') {
+                const useSedan = ['normal_cruise', 'pedestrian_crossing', 'front_car_brake', 'red_light', 'mixed_intersection'].includes(this.result?.scenario)
+                return this.makeAssetCar(0x6f8793, { sedan: useSedan })
+            }
+            return this.makeAssetCar(0x6f8793)
+        },
+        threeTargetRenderPosition(target) {
+            const [x, y, z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+            if (['traffic light', 'traffic_light'].includes(target.class_name)) {
+                const scenarioOffsetZ = Number(this.threeScenarioProps?.position.z || 0)
+                return [this.threeSignalAnchorX ?? 4.4, 0, (this.threeSignalAnchorZ ?? z) + scenarioOffsetZ]
+            }
+            return [x, y, z]
         },
         resetThreeTargets() {
             if (!this.threeTargets || !this.threeScene) return
@@ -1506,18 +1674,21 @@ const SimulationPanel = {
                 let model = this.threeTargets.get(target.id)
                 if (!model) {
                     model = this.makeThreeTarget(target)
-                    const [x, y, z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                    const [x, y, z] = this.threeTargetRenderPosition(target)
                     model.position.set(x, y, z)
                     model.userData.className = target.class_name
                     this.threeTargets.set(target.id, model)
                     this.threeScene.add(model)
                 }
                 model.visible = true
-                const [x, y, z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                const [x, y, z] = this.threeTargetRenderPosition(target)
                 model.userData.targetX = x
                 model.userData.targetY = y
                 model.userData.targetZ = z
-                model.rotation.y = Number(target.heading_rad || 0)
+                model.rotation.y = -Number(target.heading_rad || 0)
+                if (model.userData.brakeLightMaterial) {
+                    model.userData.brakeLightMaterial.emissiveIntensity = Number(target.longitudinal_acceleration_mps2 || 0) < -0.5 ? 3.2 : 0.9
+                }
             })
             this.threeTargets.forEach((target, id) => { target.visible = activeIds.has(id) })
         },
@@ -1531,132 +1702,107 @@ const SimulationPanel = {
             const personTarget = firstFrameTargets.find(target => target.class_name === 'person')
             const initialTarget = lightTarget || personTarget || firstFrameTargets[0]
             const conflictDistance = this.result.scenario === 'mixed_intersection'
-                ? Math.min(lightTarget?.distance_m || 34, 42)
-                : Math.min(initialTarget?.distance_m || 28, 38) * 1.18 + 4
+                ? Number(personTarget?.distance_m || 34)
+                : this.result.scenario === 'red_light'
+                    ? Number(lightTarget?.distance_m || 24) + 3.2
+                    : Number(personTarget?.distance_m || initialTarget?.distance_m || 28)
             const conflictZ = -conflictDistance
+            const isIntersection = ['pedestrian_crossing', 'red_light', 'mixed_intersection'].includes(this.result.scenario)
+            const isBuiltInScenario = ['normal_cruise', 'pedestrian_crossing', 'front_car_brake', 'motorcycle_cut_in', 'red_light', 'mixed_intersection'].includes(this.result.scenario)
+            this.threeRoadsideDetails.forEach(detail => { detail.visible = !isIntersection })
+            this.threeTrafficProps.forEach(detail => { detail.visible = !isBuiltInScenario })
+            this.threeSignalAnchorX = 4.4
+            this.threeSignalAnchorZ = conflictZ + 3.35
             const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xe8e6d8, roughness: 0.88 })
-            const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xb6b8ad, roughness: 0.86 })
-            const warningMaterial = new THREE.MeshStandardMaterial({ color: 0xf0782e, emissive: 0x361308 })
-            const asphaltDarkMaterial = new THREE.MeshStandardMaterial({ color: 0x262b2f, roughness: 0.97 })
-            const skidMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 1, transparent: true, opacity: 0.86 })
+            const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xc2c5bf, roughness: 0.82 })
+            const asphaltDarkMaterial = this.threeRoadMaterial?.clone()
+                || new THREE.MeshStandardMaterial({ color: 0x454d51, roughness: 0.82 })
 
-            if (['pedestrian_crossing', 'red_light', 'mixed_intersection'].includes(this.result.scenario)) {
-                for (let index = 0; index < 9; index += 1) {
-                    const stripe = new THREE.Mesh(new THREE.BoxGeometry(15.8, 0.035, 0.48), whiteMaterial)
-                    stripe.position.set(0, 0.06, conflictZ + (index - 4) * 0.9)
+            if (isIntersection) {
+                for (let index = 0; index < 6; index += 1) {
+                    const stripe = new THREE.Mesh(new THREE.BoxGeometry(12.8, 0.035, 0.38), whiteMaterial)
+                    stripe.position.set(0, 0.06, conflictZ + (index - 2.5) * 0.82)
                     group.add(stripe)
                 }
-                for (const x of [-9.2, 9.2]) {
-                    const waitingCurb = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.18, 5.8), curbMaterial)
-                    waitingCurb.position.set(x, 0.14, conflictZ)
-                    group.add(waitingCurb)
+                for (const side of [-1, 1]) {
+                    const cornerCurb = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.22, 7.2), curbMaterial)
+                    cornerCurb.position.set(side * 9.2, 0.13, conflictZ)
+                    cornerCurb.receiveShadow = true
+                    group.add(cornerCurb)
                     const tactile = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.025, 0.42), whiteMaterial)
-                    tactile.position.set(x, 0.25, conflictZ - 2.2)
+                    tactile.position.set(side * 7.55, 0.26, conflictZ - 2.15)
                     group.add(tactile)
                 }
             }
             if (this.result.scenario === 'pedestrian_crossing') {
-                const waitingA = this.makeThreePerson({ jacket: 0x6a9f5f, pants: 0x26313a, walkAmplitude: 0.08 })
-                waitingA.position.set(-9.2, 0.18, conflictZ - 1.9)
-                waitingA.rotation.y = Math.PI / 2
-                const waitingB = this.makeThreePerson({ jacket: 0xd1a74b, pants: 0x2b3036, walkAmplitude: 0.08 })
-                waitingB.position.set(9.15, 0.18, conflictZ + 1.8)
-                waitingB.rotation.y = -Math.PI / 2
                 const crossingSign = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.95, 0.08), new THREE.MeshStandardMaterial({ color: 0x2f78c2, emissive: 0x09243d, emissiveIntensity: 0.35 }))
-                crossingSign.position.set(-10.2, 2.95, conflictZ + 3.4)
+                crossingSign.position.set(-9.2, 2.95, conflictZ + 3.4)
                 const signPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 2.65, 8), new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 }))
-                signPole.position.set(-10.2, 1.33, conflictZ + 3.4)
-                group.add(waitingA, waitingB, crossingSign, signPole)
+                signPole.position.set(-9.2, 1.33, conflictZ + 3.4)
+                group.add(crossingSign, signPole)
             }
             if (this.result.scenario === 'red_light' || this.result.scenario === 'mixed_intersection') {
                 const crossingRoad = new THREE.Mesh(
-                    new THREE.PlaneGeometry(74, 17),
+                    new THREE.PlaneGeometry(42, 12),
                     asphaltDarkMaterial
                 )
                 crossingRoad.rotation.x = -Math.PI / 2
-                crossingRoad.position.set(0, 0.028, conflictZ - 9)
+                crossingRoad.position.set(0, 0.05, conflictZ - 6)
+                crossingRoad.receiveShadow = true
                 group.add(crossingRoad)
-                const stopLine = new THREE.Mesh(new THREE.BoxGeometry(16, 0.05, 0.65), whiteMaterial)
-                stopLine.position.set(0, 0.07, conflictZ + 5.2)
+                const stopLine = new THREE.Mesh(new THREE.BoxGeometry(12, 0.05, 0.55), whiteMaterial)
+                stopLine.position.set(0, 0.075, conflictZ + 3.2)
                 group.add(stopLine)
-                for (const x of [-11.8, 11.8]) {
+                for (let segment = -3; segment <= 3; segment += 1) {
+                    for (const zOffset of [-3.2, -9]) {
+                        const crossLaneMark = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.035, 0.13), whiteMaterial)
+                        crossLaneMark.position.set(segment * 5.5, 0.071, conflictZ + zOffset)
+                        group.add(crossLaneMark)
+                    }
+                }
+                for (const side of [-1, 1]) {
+                    const x = side * 8.6
                     const pole = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.09, 0.12, 5.4, 12),
-                        new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.8 })
+                        new THREE.MeshStandardMaterial({ color: 0x30383d, roughness: 0.72, metalness: 0.18 })
                     )
                     pole.position.set(x, 2.7, conflictZ + 3.2)
-                    const arm = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.1, 0.1), pole.material)
-                    arm.position.set(x > 0 ? x - 2.25 : x + 2.25, 5.32, conflictZ + 3.2)
-                    const signal = this.makeThreeTrafficLight()
-                    signal.scale.setScalar(0.58)
-                    signal.position.set(x > 0 ? x - 4.2 : x + 4.2, 1.65, conflictZ + 3.3)
-                    signal.rotation.y = x > 0 ? Math.PI / 2 : -Math.PI / 2
+                    pole.castShadow = true
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(6, 0.12, 0.12), pole.material)
+                    arm.position.set(side * 5.65, 5.25, conflictZ + 3.2)
+                    const signal = this.makeThreeTrafficLight({ withPole: false, state: lightTarget?.state || 'red' })
+                    signal.scale.setScalar(0.82)
+                    signal.position.set(side * 4.4, 5.05, conflictZ + 3.35)
                     group.add(pole, arm, signal)
                 }
-                for (const x of [-3, 3]) {
-                    const turnArrow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 5.2), whiteMaterial)
-                    turnArrow.position.set(x, 0.075, conflictZ + 12.5)
-                    group.add(turnArrow)
-                }
                 if (this.result.scenario === 'mixed_intersection') {
-                    const queueCar = this.makeThreeVehicle(0xbfc7c9)
-                    queueCar.scale.setScalar(0.86)
-                    queueCar.position.set(-5.2, 0.03, conflictZ - 10)
-                    queueCar.rotation.y = -Math.PI / 2
-                    const cyclist = this.makeThreeCyclist()
-                    cyclist.position.set(7.3, 0.02, conflictZ + 2.4)
-                    cyclist.rotation.y = Math.PI / 2
-                    const scooter = this.makeThreeMotorcycle()
-                    scooter.scale.setScalar(0.72)
-                    scooter.position.set(4.7, 0.03, conflictZ - 5.8)
-                    scooter.rotation.y = -0.35
-                    const waitingPerson = this.makeThreePerson({ jacket: 0x8a69c4, pants: 0x20272d, walkAmplitude: 0.08 })
-                    waitingPerson.position.set(-9.3, 0.18, conflictZ + 2.2)
-                    waitingPerson.rotation.y = Math.PI / 2
-                    const busBay = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.03, 13), asphaltDarkMaterial)
-                    busBay.position.set(8.2, 0.068, conflictZ - 16)
-                    group.add(queueCar, cyclist, scooter, waitingPerson, busBay)
+                    const islandMaterial = new THREE.MeshStandardMaterial({ color: 0xd5d6cf, roughness: 0.84 })
+                    for (const side of [-1, 1]) {
+                        const refugeIsland = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.16, 5.4), islandMaterial)
+                        refugeIsland.position.set(side * 8.25, 0.12, conflictZ - 8.5)
+                        group.add(refugeIsland)
+                        const bollard = new THREE.Mesh(
+                            new THREE.CylinderGeometry(0.09, 0.12, 0.9, 12),
+                            new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.55 })
+                        )
+                        bollard.position.set(side * 8.25, 0.58, conflictZ - 6.2)
+                        group.add(bollard)
+                    }
                 }
-            }
-            if (this.result.scenario === 'front_car_brake') {
-                for (const x of [-0.74, 0.74]) {
-                    const mark = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.025, 13.2), skidMaterial)
-                    mark.position.set(x, 0.058, conflictZ + 7)
-                    mark.rotation.y = x > 0 ? 0.035 : -0.035
-                    group.add(mark)
-                }
-                const warningTriangle = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.08, 3), warningMaterial)
-                warningTriangle.rotation.set(Math.PI / 2, 0, Math.PI / 3)
-                warningTriangle.position.set(5.8, 0.42, conflictZ + 11)
-                const shoulderLine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 16), whiteMaterial)
-                shoulderLine.position.set(7.25, 0.07, conflictZ + 7)
-                group.add(warningTriangle, shoulderLine)
-            }
-            if (this.result.scenario === 'motorcycle_cut_in') {
-                for (let index = 0; index < 7; index += 1) {
-                    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.82, 14), warningMaterial)
-                    cone.position.set(6.4 - index * 0.18, 0.42, conflictZ + 12 - index * 4.2)
-                    group.add(cone)
-                    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.75, 14), warningMaterial)
-                    barrel.position.set(8.05, 0.39, conflictZ + 9 - index * 5.4)
-                    group.add(barrel)
-                }
-                const closedLane = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.03, 24), asphaltDarkMaterial)
-                closedLane.position.set(7.1, 0.066, conflictZ - 3)
-                group.add(closedLane)
             }
             this.threeScenarioProps = group
             this.threeScene.add(group)
+            this.buildAmbientTraffic()
         },
         configureThreeEnvironment() {
             const THREE = window.THREE
             if (!this.threeScene || !THREE) return
             const weather = this.result?.weather || 'clear'
             const config = {
-                clear: { sky: 0x8fb4c7, skyTop: 0x4388b3, skyBottom: 0xdce6e5, fog: 0x8fb4c7, near: 45, far: 160, hemi: 2.25, sun: 3.2, headlight: 0.35, street: 0, exposure: 1.05, road: 0x5d6263, roughness: 0.94, metalness: 0.02 },
-                rain: { sky: 0x586c78, skyTop: 0x354957, skyBottom: 0x9aa6a8, fog: 0x667984, near: 20, far: 92, hemi: 1.45, sun: 1.25, headlight: 2.2, street: 0.8, exposure: 0.92, road: 0x353d42, roughness: 0.48, metalness: 0.18 },
-                fog: { sky: 0xaeb8b8, skyTop: 0x909d9e, skyBottom: 0xd4d7d2, fog: 0xb8c0bd, near: 8, far: 48, hemi: 1.7, sun: 1.1, headlight: 2.8, street: 1.2, exposure: 0.98, road: 0x596164, roughness: 0.82, metalness: 0.05 },
-                night: { sky: 0x050d18, skyTop: 0x020611, skyBottom: 0x15283b, fog: 0x07101c, near: 24, far: 100, hemi: 0.55, sun: 0.25, headlight: 6.5, street: 3.4, exposure: 0.72, road: 0x232a30, roughness: 0.58, metalness: 0.15 },
+                clear: { sky: 0x789eaf, skyTop: 0x426f89, skyBottom: 0xb9c9cc, fog: 0x89a6b1, near: 62, far: 185, hemi: 1.35, sun: 1.85, headlight: 0.25, street: 0, exposure: 0.9, road: 0x4c5356, roughness: 0.92, metalness: 0.02 },
+                rain: { sky: 0x607581, skyTop: 0x3f5663, skyBottom: 0xaab4b5, fog: 0x70818a, near: 28, far: 112, hemi: 1.7, sun: 1.45, headlight: 2.0, street: 0.7, exposure: 0.98, road: 0x40494e, roughness: 0.5, metalness: 0.14 },
+                fog: { sky: 0x9ba7a8, skyTop: 0x7e8c8f, skyBottom: 0xc3c9c6, fog: 0xaab3b1, near: 12, far: 60, hemi: 1.2, sun: 0.85, headlight: 2.6, street: 1.1, exposure: 0.86, road: 0x4f585b, roughness: 0.84, metalness: 0.04 },
+                night: { sky: 0x050d18, skyTop: 0x020611, skyBottom: 0x15283b, fog: 0x07101c, near: 24, far: 100, hemi: 0.58, sun: 0.18, headlight: 0.9, street: 2.1, exposure: 0.64, road: 0x232a30, roughness: 0.58, metalness: 0.15 },
             }[weather]
             this.threeScene.background = new THREE.Color(config.sky)
             this.threeScene.fog = new THREE.Fog(config.fog, config.near, config.far)
@@ -1681,15 +1827,15 @@ const SimulationPanel = {
                 this.threeRain = null
             }
             if (weather === 'rain') {
-                const positions = new Float32Array(950 * 3)
-                for (let index = 0; index < 950; index += 1) {
+                const positions = new Float32Array(560 * 3)
+                for (let index = 0; index < 560; index += 1) {
                     positions[index * 3] = (Math.random() - 0.5) * 34
                     positions[index * 3 + 1] = Math.random() * 12
                     positions[index * 3 + 2] = 8 - Math.random() * 105
                 }
                 const geometry = new THREE.BufferGeometry()
                 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-                const material = new THREE.PointsMaterial({ color: 0xcbe7f2, size: 0.085, transparent: true, opacity: 0.68 })
+                const material = new THREE.PointsMaterial({ color: 0xd2e8ef, size: 0.055, transparent: true, opacity: 0.46 })
                 this.threeRain = new THREE.Points(geometry, material)
                 this.threeScene.add(this.threeRain)
             }
@@ -1705,13 +1851,16 @@ const SimulationPanel = {
         },
         targetStyle(target) {
             if (this.threeCamera && window.THREE) {
-                const [x, , z] = target.world_position || [target.lateral_m || 0, 0, -target.distance_m]
+                const [x, , z] = this.threeTargetRenderPosition(target)
+                const isTrafficLight = ['traffic light', 'traffic_light'].includes(target.class_name)
                 const point = new window.THREE.Vector3(
                     x,
-                    ['traffic light', 'traffic_light'].includes(target.class_name) ? 3.1 : 1.25,
+                    isTrafficLight ? 5.05 : 1.25,
                     z
                 ).project(this.threeCamera)
-                const scale = Math.max(0.62, Math.min(1.45, 30 / (target.distance_m + 5)))
+                const scale = isTrafficLight
+                    ? 0.82
+                    : Math.max(0.62, Math.min(1.28, 28 / (target.distance_m + 6)))
                 return {
                     left: ((point.x + 1) / 2 * 100) + '%',
                     top: ((1 - point.y) / 2 * 100) + '%',
@@ -1731,16 +1880,17 @@ const SimulationPanel = {
         currentTtc() { return this.primaryTarget?.risk?.ttc_sec },
         chartPoints() {
             if (!this.timeline.length) return ''
-            const last = Math.max(1, this.timeline.length - 1)
-            return this.timeline.map((item, index) => {
-                const x = 10 + index / last * 580
+            const duration = Math.max(Number(this.result?.duration_sec || 0), 0.001)
+            return this.timeline.map(item => {
+                const x = 10 + Number(item.time_sec || 0) / duration * 580
                 const y = 142 - item.max_risk_score * 1.18
                 return `${x.toFixed(1)},${y.toFixed(1)}`
             }).join(' ')
         },
         chartAreaPoints() { return this.chartPoints ? `10,142 ${this.chartPoints} 590,142` : '' },
         chartCursorX() {
-            return 10 + this.frameIndex / Math.max(1, this.timeline.length - 1) * 580
+            const duration = Math.max(Number(this.result?.duration_sec || 0), 0.001)
+            return 10 + Number(this.frame?.time_sec || 0) / duration * 580
         },
         eventLog() {
             const events = []
@@ -1752,6 +1902,31 @@ const SimulationPanel = {
                 }
             })
             return events.slice(-4).reverse()
+        },
+        comparisonInsights() {
+            if (!this.comparisonResult?.withAeb || !this.comparisonResult?.withoutAeb) return null
+            const withMetrics = this.comparisonResult.withAeb.metrics
+            const withoutMetrics = this.comparisonResult.withoutAeb.metrics
+            const avoidedCollision = withoutMetrics.collision && !withMetrics.collision
+            const collisionSpeedReduction = withoutMetrics.collision
+                ? Math.max(0, Number(withoutMetrics.collision_speed_kmh || 0) - Number(withMetrics.collision_speed_kmh || 0))
+                : null
+            const withStoppingDistance = withMetrics.stopping_distance_m
+            const withoutStoppingDistance = withoutMetrics.stopping_distance_m
+            const stoppingDistanceDifference = withStoppingDistance == null || withoutStoppingDistance == null
+                ? null
+                : Number(withStoppingDistance) - Number(withoutStoppingDistance)
+            const stoppingDistanceLabel = stoppingDistanceDifference == null
+                ? (withStoppingDistance != null && withoutStoppingDistance == null ? '关闭侧未停车' : '未完成停车')
+                : `${stoppingDistanceDifference > 0 ? '+' : ''}${stoppingDistanceDifference.toFixed(1)} m`
+            return {
+                avoidedCollision,
+                avoidedLabel: avoidedCollision ? '是' : (withoutMetrics.collision ? '否' : '基线无碰撞'),
+                collisionSpeedReduction,
+                stoppingDistanceDifference,
+                stoppingDistanceLabel,
+                clearanceImprovement: Number(withMetrics.min_clearance_m || 0) - Number(withoutMetrics.min_clearance_m || 0),
+            }
         },
     },
     template: `
@@ -1926,12 +2101,19 @@ const SimulationPanel = {
                     <div><span>碰撞结果</span><strong :class="result.metrics.collision ? 'risk-high' : 'risk-low'">{{ result.metrics.collision ? '发生碰撞' : '安全通过' }}</strong><small>仿真判定</small></div>
                     <div><span>AEB 介入</span><strong>{{ result.metrics.aeb_activation_sec == null ? '未触发' : result.metrics.aeb_activation_sec + 's' }}</strong><small>闭环控制</small></div>
                     <div><span>最终车速</span><strong>{{ (result.metrics.final_speed_kmh ?? result.ego_speed_kmh).toFixed(1) }}</strong><small>km/h</small></div>
+                    <div><span>AEB 触发依据</span><strong>{{ result.metrics.aeb_trigger_reason?.target_class_name_cn || '未达到阈值' }}</strong><small>{{ result.metrics.aeb_trigger_reason ? result.metrics.aeb_trigger_reason.actual_distance_m.toFixed(1) + 'm / 需求 ' + result.metrics.aeb_trigger_reason.required_distance_m.toFixed(1) + 'm' : '停车距离判定' }}</small></div>
                 </div>
             </div>
         </div>
 
         <section v-if="comparisonResult" class="sim-comparison-band">
             <div class="sim-subhead"><span>AEB 干预效果对比</span><strong>SAME SCENARIO / CONTROL VARIABLE</strong></div>
+            <div v-if="comparisonInsights" class="sim-comparison-metrics sim-comparison-summary">
+                <div><span>是否避免碰撞</span><strong :class="comparisonInsights.avoidedCollision ? 'risk-low' : ''">{{ comparisonInsights.avoidedLabel }}</strong></div>
+                <div><span>碰撞速度降低</span><strong>{{ comparisonInsights.collisionSpeedReduction == null ? '--' : comparisonInsights.collisionSpeedReduction.toFixed(1) + ' km/h' }}</strong></div>
+                <div><span>停车距离差（启用 - 关闭）</span><strong>{{ comparisonInsights.stoppingDistanceLabel }}</strong></div>
+                <div><span>最小净距提升</span><strong>{{ comparisonInsights.clearanceImprovement.toFixed(1) }} m</strong></div>
+            </div>
             <div class="sim-comparison-grid">
                 <article v-for="item in [
                     { key: 'with', label: '启用 AEB', result: comparisonResult.withAeb },
@@ -1945,8 +2127,8 @@ const SimulationPanel = {
                     </svg>
                     <div class="sim-comparison-metrics">
                         <div><span>碰撞</span><strong :class="item.result.metrics.collision ? 'risk-high' : 'risk-low'">{{ item.result.metrics.collision ? '是' : '否' }}</strong></div>
-                        <div><span>最终车速</span><strong>{{ item.result.metrics.final_speed_kmh.toFixed(1) }} km/h</strong></div>
-                        <div><span>行驶距离</span><strong>{{ item.result.metrics.ego_distance_m.toFixed(1) }} m</strong></div>
+                        <div><span>碰撞速度</span><strong>{{ item.result.metrics.collision_speed_kmh == null ? '--' : item.result.metrics.collision_speed_kmh.toFixed(1) + ' km/h' }}</strong></div>
+                        <div><span>最小净距</span><strong>{{ item.result.metrics.min_clearance_m == null ? '--' : item.result.metrics.min_clearance_m.toFixed(1) + ' m' }}</strong></div>
                         <div><span>AEB 介入</span><strong>{{ item.result.metrics.aeb_activation_sec == null ? '--' : item.result.metrics.aeb_activation_sec + 's' }}</strong></div>
                     </div>
                 </article>

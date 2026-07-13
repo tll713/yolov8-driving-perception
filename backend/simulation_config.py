@@ -64,7 +64,7 @@ PRESET_SCENARIOS = {
             {
                 "id": "car0",
                 "class_name": "car",
-                "distance_m": 38,
+                "distance_m": 30,
                 "lateral_m": 0,
                 "longitudinal_speed_mps": 13,
             }
@@ -114,18 +114,20 @@ PRESET_SCENARIOS = {
         "weather": "night",
         "ego_speed_kmh": 45,
         "duration_sec": 5,
+        "aeb_safety_margin_m": 6,
         "targets": [
             {
                 "id": "m1",
                 "class_name": "motorcycle",
                 "distance_m": 30,
-                "lateral_m": 2.7,
+                "lateral_m": 4.2,
                 "lateral_speed_mps": 0,
-                "longitudinal_speed_mps": 4,
+                "longitudinal_speed_mps": 8.5,
             }
         ],
         "events": [
             {"time_sec": 1.0, "target_id": "m1", "lateral_speed_mps": -1.05},
+            {"time_sec": 5.0, "target_id": "m1", "lateral_speed_mps": 0, "heading_rad": 0},
         ],
     },
     "red_light": {
@@ -154,28 +156,28 @@ PRESET_SCENARIOS = {
             {
                 "id": "mix-car",
                 "class_name": "car",
-                "distance_m": 36,
+                "distance_m": 24,
                 "lateral_m": 0.1,
                 "longitudinal_speed_mps": 5,
             },
             {
                 "id": "mix-person",
                 "class_name": "person",
-                "distance_m": 27,
-                "lateral_m": -3.5,
-                "lateral_speed_mps": 1.1,
+                "distance_m": 34,
+                "lateral_m": -4.6,
+                "lateral_speed_mps": 0,
             },
             {
                 "id": "mix-light",
                 "class_name": "traffic light",
-                "distance_m": 48,
+                "distance_m": 31,
                 "lateral_m": 0,
                 "state": "red",
             },
         ],
         "events": [
-            {"time_sec": 1.0, "target_id": "mix-car", "longitudinal_acceleration_mps2": -5.5},
-            {"time_sec": 1.25, "target_id": "mix-person", "lateral_speed_mps": 1.2},
+            {"time_sec": 0.75, "target_id": "mix-car", "longitudinal_acceleration_mps2": -5.5},
+            {"time_sec": 1.25, "target_id": "mix-person", "lateral_speed_mps": 1.35},
         ],
     },
 }
