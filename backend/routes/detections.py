@@ -19,6 +19,7 @@ detections_bp = Blueprint("detections", __name__)
 def detect_image_endpoint():
     upload = request.files.get("file")
     if upload is None:
+        log_error(level="WARN", source="detect_image_endpoint", message="用户未上传文件就点击了图片检测", request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response("请上传图片文件", 400)), 400
 
     try:
@@ -29,6 +30,7 @@ def detect_image_endpoint():
             username=request.form.get("username"),
         )
     except ValueError as exc:
+        log_error(level="WARN", source="detect_image_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
         log_error(source="detect_image_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
@@ -44,6 +46,7 @@ def detect_image_endpoint():
 def detect_video_endpoint():
     upload = request.files.get("file")
     if upload is None:
+        log_error(level="WARN", source="detect_video_endpoint", message="用户未上传文件就点击了视频检测", request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response("请上传视频文件", 400)), 400
 
     try:
@@ -54,6 +57,7 @@ def detect_video_endpoint():
             username=request.form.get("username"),
         )
     except ValueError as exc:
+        log_error(level="WARN", source="detect_video_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
         log_error(source="detect_video_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
@@ -69,6 +73,7 @@ def detect_video_endpoint():
 def create_video_detection_job_endpoint():
     upload = request.files.get("file")
     if upload is None:
+        log_error(level="WARN", source="create_video_detection_job_endpoint", message="用户未上传文件就点击了视频检测任务", request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response("请上传视频文件", 400)), 400
 
     try:
@@ -79,6 +84,7 @@ def create_video_detection_job_endpoint():
             username=request.form.get("username"),
         )
     except ValueError as exc:
+        log_error(level="WARN", source="create_video_detection_job_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=400)
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
         log_error(source="create_video_detection_job_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
