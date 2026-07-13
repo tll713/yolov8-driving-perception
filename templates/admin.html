@@ -352,6 +352,46 @@
             box-shadow: none;
         }
         .admin-search-bar .form-input:focus { border-color: transparent; }
+        .admin-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .admin-detail-grid div {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            background: rgba(0,0,0,0.02);
+        }
+        .admin-detail-grid span {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .admin-detail-media {
+            width: 100%;
+            max-height: 45vh;
+            border-radius: var(--radius-sm);
+            margin: 10px 0;
+            background: #111827;
+        }
+        .admin-detail-list {
+            max-height: 220px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+        .admin-detail-row {
+            display: grid;
+            grid-template-columns: 1.5fr 0.8fr 0.8fr 2fr;
+            gap: 8px;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.78rem;
+        }
+        .admin-detail-row:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -453,13 +493,13 @@
                             </h3>
                             <span class="admin-card-desc" id="records-count">共 0 条记录</span>
                         </div>
-                        <button class="btn btn-ghost btn-sm" onclick="loadRecords()">刷新</button>
+                        <button class="btn btn-ghost btn-sm" type="button" data-admin-action="refresh-records">刷新</button>
                     </div>
                     <div class="admin-card-body" style="padding:0;">
                         <div class="admin-table-wrap">
                             <table class="admin-table" id="records-table">
                                 <thead>
-                                    <tr><th>#</th><th>检测时间</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
+                                    <tr><th>#</th><th>检测时间</th><th>用户</th><th>文件名</th><th>目标数</th><th>风险等级</th><th>操作</th></tr>
                                 </thead>
                                 <tbody id="records-body"></tbody>
                             </table>
@@ -549,7 +589,7 @@
                         <div class="admin-table-wrap">
                             <table class="admin-table" id="users-table">
                                 <thead>
-                                    <tr><th>#</th><th>用户名</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+                                    <tr><th>#</th><th>用户名</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>检测记录</th><th>操作</th></tr>
                                 </thead>
                                 <tbody id="users-body"></tbody>
                             </table>
@@ -581,6 +621,16 @@
             <div class="login-modal-actions" style="margin-top:24px;">
                 <button class="btn btn-primary admin-btn-purple" type="button" onclick="submitEditUser()">保存</button>
                 <button class="btn btn-ghost" type="button" onclick="closeEditModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="login-modal-overlay" id="record-modal" style="display:none;">
+        <div class="login-modal-card" style="text-align:left;max-width:820px;">
+            <h3 style="text-align:center;">检测记录详情</h3>
+            <div id="record-detail-body"></div>
+            <div class="login-modal-actions" style="margin-top:20px;">
+                <button class="btn btn-ghost" type="button" data-admin-action="close-record-modal">关闭</button>
             </div>
         </div>
     </div>
@@ -646,32 +696,103 @@
             return '<span class="admin-badge admin-badge-' + (level || 'low') + '">' + (map[level] || level || '低风险') + '</span>';
         }
 
-        function loadRecords() {
-            fetch('/api/admin/records').then(function(r){return r.json()}).then(function(d){
-                if(d.code!==0) return;
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function recordMediaUrl(item) {
+            if (item.result_video) return item.result_video;
+            if (item.result_filename) return '/results/' + item.result_filename;
+            if (item.result_path) return '/results/' + String(item.result_path).split(/[\\/]/).pop();
+            return '';
+        }
+
+        var currentRecordUsername = '';
+
+        function loadRecords(username) {
+            if (username !== undefined) currentRecordUsername = username || '';
+            var url = '/api/admin/records' + (currentRecordUsername ? '?username=' + encodeURIComponent(currentRecordUsername) : '');
+            apiJson(url).then(function(d){
+                if(d.code!==0) { alert(d.message || '加载检测记录失败'); return; }
                 var items = d.data.items || [];
-                document.getElementById('records-count').textContent = '共 ' + items.length + ' 条记录';
+                document.getElementById('records-count').textContent = (currentRecordUsername ? currentRecordUsername + '：' : '') + '共 ' + items.length + ' 条记录';
                 var tbody = document.getElementById('records-body');
                 var empty = document.getElementById('records-empty');
                 if (!items.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
                 empty.style.display = 'none';
                 tbody.innerHTML = items.map(function(item, i){
+                    var recordId = item.record_id || item.id;
                     return '<tr>' +
                         '<td>' + (i+1) + '</td>' +
-                        '<td>' + (item.created_at || '-') + '</td>' +
-                        '<td>' + (item.original_filename || item.filename || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.created_at || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.username || '-') + '</td>' +
+                        '<td>' + escapeHtml(item.original_filename || item.filename || '-') + '</td>' +
                         '<td>' + (item.count || item.total_objects || 0) + '</td>' +
                         '<td>' + riskBadge(item.max_risk_level) + '</td>' +
-                        '<td><button class="btn btn-ghost btn-sm" onclick="deleteRecord(' + i + ')">删除</button></td>' +
+                        '<td><div class="admin-user-tools">' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="view-record" data-record-id="' + recordId + '">查看</button>' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-record" data-record-id="' + recordId + '">删除</button>' +
+                        '</div></td>' +
                     '</tr>';
                 }).join('');
-            });
+            }).catch(function(){ alert('加载检测记录失败，请检查后端服务是否启动'); });
         }
         function deleteRecord(id) {
             if (!confirm('确认删除此记录？')) return;
-            fetch('/api/admin/records/' + id, {method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
+            apiJson('/api/admin/records/' + encodeURIComponent(id), {method:'DELETE'}).then(function(d){
                 if(d.code===0) loadRecords(); else alert(d.message||'删除失败');
-            });
+            }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
+        }
+
+        function viewRecordDetail(id) {
+            apiJson('/api/admin/records/' + encodeURIComponent(id)).then(function(d){
+                if (d.code !== 0) { alert(d.message || '查询详情失败'); return; }
+                var item = d.data || {};
+                var mediaUrl = recordMediaUrl(item);
+                var isVideo = String(mediaUrl).toLowerCase().match(/\.(mp4|avi|mov|mkv|webm)$/);
+                var mediaHtml = mediaUrl
+                    ? (isVideo
+                        ? '<video class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" controls></video>'
+                        : '<img class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" alt="检测结果">')
+                    : '<div class="admin-empty">暂无可预览的结果文件</div>';
+                var detections = item.detections || [];
+                var rows = detections.map(function(det) {
+                    var risk = det.risk || {};
+                    return '<div class="admin-detail-row">' +
+                        '<strong>' + escapeHtml(det.class_name_cn || det.class_name || '-') + '</strong>' +
+                        '<span>' + ((det.confidence || 0) * 100).toFixed(1) + '%</span>' +
+                        '<span>' + riskBadge(risk.level || 'low') + '</span>' +
+                        '<span>' + escapeHtml(risk.message || risk.reason || '-') + '</span>' +
+                    '</div>';
+                }).join('');
+                document.getElementById('record-detail-body').innerHTML =
+                    '<div class="admin-detail-grid">' +
+                        '<div><span>检测时间</span><strong>' + escapeHtml(item.created_at || '-') + '</strong></div>' +
+                        '<div><span>文件名</span><strong>' + escapeHtml(item.original_filename || item.filename || '-') + '</strong></div>' +
+                        '<div><span>目标数</span><strong>' + (item.count || item.total_objects || 0) + '</strong></div>' +
+                        '<div><span>风险等级</span><strong>' + riskBadge(item.max_risk_level) + '</strong></div>' +
+                    '</div>' +
+                    mediaHtml +
+                    '<h4 style="margin:12px 0 8px;">目标明细</h4>' +
+                    '<div class="admin-detail-list">' + (rows || '<div class="admin-empty">暂无目标明细</div>') + '</div>';
+                document.getElementById('record-modal').style.display = 'flex';
+            }).catch(function(){ alert('查询详情失败，请检查后端服务是否启动'); });
+        }
+
+        function closeRecordModal() {
+            document.getElementById('record-modal').style.display = 'none';
+            document.getElementById('record-detail-body').innerHTML = '';
+        }
+
+        function viewUserRecords(username) {
+            currentRecordUsername = username || '';
+            switchTab('records', document.querySelector('.admin-sidebar-item[onclick*="records"]'));
+            loadRecords(currentRecordUsername);
         }
 
         function loadStatus() {
@@ -738,14 +859,15 @@
                 var status = u.status || 'active';
                 return '<tr>' +
                     '<td>' + (i + 1) + '</td>' +
-                    '<td>' + (u.username || '-') + '</td>' +
-                    '<td>' + (u.email || '-') + '</td>' +
+                    '<td>' + escapeHtml(u.username || '-') + '</td>' +
+                    '<td>' + escapeHtml(u.email || '-') + '</td>' +
                     '<td><span class="user-status-' + status + '">' + (status === 'disabled' ? '禁用' : '正常') + '</span></td>' +
-                    '<td>' + (u.created_at || '-') + '</td>' +
+                    '<td>' + escapeHtml(u.created_at || '-') + '</td>' +
+                    '<td><button class="btn btn-ghost btn-sm" type="button" data-admin-action="view-user-records" data-username="' + escapeHtml(u.username || '') + '">查看记录</button></td>' +
                     '<td><div class="admin-user-tools">' +
-                        '<button class="btn btn-ghost btn-sm" type="button" onclick="editUser(' + JSON.stringify(u.username) + ')">编辑</button>' +
-                        '<button class="btn btn-ghost btn-sm" type="button" onclick="toggleUserStatus(' + JSON.stringify(u.username) + ', ' + JSON.stringify(status) + ')">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
-                        '<button class="btn btn-ghost btn-sm" type="button" onclick="deleteUser(' + JSON.stringify(u.username) + ')">删除</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="edit-user" data-username="' + escapeHtml(u.username || '') + '">编辑</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="toggle-user" data-username="' + escapeHtml(u.username || '') + '" data-status="' + status + '">' + (status === 'disabled' ? '启用' : '禁用') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-user" data-username="' + escapeHtml(u.username || '') + '">删除</button>' +
                     '</div></td>' +
                 '</tr>';
             }).join('');
@@ -821,7 +943,7 @@
             document.getElementById('edit-username-display').textContent = username;
             document.getElementById('edit-email-input').value = user.email || '';
             document.getElementById('edit-password-input').value = '';
-            document.getElementById('edit-modal').style.display = '';
+            document.getElementById('edit-modal').style.display = 'flex';
         }
 
         function closeEditModal() {
@@ -864,6 +986,25 @@
             }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
         }
 
+        document.addEventListener('click', function(event) {
+            var btn = event.target.closest('[data-admin-action]');
+            if (!btn) return;
+            var action = btn.getAttribute('data-admin-action');
+            if (action === 'refresh-records') loadRecords(currentRecordUsername);
+            if (action === 'view-record') viewRecordDetail(btn.getAttribute('data-record-id'));
+            if (action === 'delete-record') deleteRecord(btn.getAttribute('data-record-id'));
+            if (action === 'view-user-records') viewUserRecords(btn.getAttribute('data-username'));
+            if (action === 'edit-user') editUser(btn.getAttribute('data-username'));
+            if (action === 'toggle-user') toggleUserStatus(btn.getAttribute('data-username'), btn.getAttribute('data-status'));
+            if (action === 'delete-user') deleteUser(btn.getAttribute('data-username'));
+            if (action === 'close-record-modal') closeRecordModal();
+        });
+
+        window.loadRecords = loadRecords;
+        window.deleteRecord = deleteRecord;
+        window.viewRecordDetail = viewRecordDetail;
+        window.closeRecordModal = closeRecordModal;
+        window.viewUserRecords = viewUserRecords;
         window.loadUsers = loadUsers;
         window.filterUsers = filterUsers;
         window.createUser = createUser;
