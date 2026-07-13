@@ -1160,7 +1160,7 @@ li::before {
 .sim-editor-head span,
 .sim-editor-fields label > span,
 .sim-editor-json label > span {
-    color: #030303;
+    color: #aeb8c2;
     font-size: 0.68rem;
 }
 .sim-editor-head strong { color: #e6ecef; font-size: 0.9rem; }
@@ -1253,10 +1253,11 @@ li::before {
     border-left: 2px solid #39d98a;
 }
 .sim-stage-top span {
-    color: #070707;
+    color: #aeb8c2;
     font-size: 0.62rem;
 }
 .sim-stage-top strong {
+    color: #f2f6f8;
     font-size: 0.82rem;
     font-weight: 550;
 }
@@ -1328,7 +1329,7 @@ li::before {
     right: 12.5%;
     height: 1px;
     border-top: 1px dashed rgba(0,0,0,0.09);
-    color: rgba(6, 6, 6, 0.34);
+    color: rgba(219, 230, 236, 0.58);
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.58rem;
     padding: 3px 5px;
@@ -1440,7 +1441,7 @@ li::before {
 }
 .sim-playback span,
 .sim-playback strong {
-    color: #070707;
+    color: #cbd5dc;
     font: 0.65rem 'JetBrains Mono', monospace;
     text-align: center;
 }
@@ -1468,7 +1469,7 @@ li::before {
     border: 0;
     border-radius: 3px;
     background: transparent;
-    color: #090909;
+    color: #aeb8c2;
     cursor: pointer;
     font: 0.6rem 'JetBrains Mono', monospace;
 }
@@ -1494,7 +1495,7 @@ li::before {
 .sim-kpi > span,
 .sim-kpi > small {
     display: block;
-    color: #040405;
+    color: #aeb8c2;
     font-size: 0.65rem;
 }
 .sim-kpi > strong {
@@ -1516,7 +1517,7 @@ li::before {
 .sim-decision > div {
     display: flex;
     justify-content: space-between;
-    color: #070707;
+    color: #aeb8c2;
     font-size: 0.68rem;
 }
 .sim-decision strong { color: #e9eef2; }
@@ -1535,7 +1536,7 @@ li::before {
     margin-bottom: 12px;
 }
 .sim-subhead span { color: #dce2e6; font-size: 0.75rem; font-weight: 550; }
-.sim-subhead strong { color: #050505; font: 0.62rem 'JetBrains Mono', monospace; }
+.sim-subhead strong { color: #8ee8b6; font: 0.62rem 'JetBrains Mono', monospace; }
 .sim-event-row {
     display: grid;
     grid-template-columns: 52px 8px 1fr;
@@ -1545,7 +1546,7 @@ li::before {
     border-bottom: 1px solid rgba(0,0,0,0.05);
     font-size: 0.7rem;
 }
-.sim-event-row time { color: #080808; font-family: 'JetBrains Mono', monospace; }
+.sim-event-row time { color: #cbd5dc; font-family: 'JetBrains Mono', monospace; }
 .sim-event-row i { width: 6px; height: 6px; border-radius: 50%; background: #39d98a; }
 .sim-event-row i.event-medium { background: #f59e0b; }
 .sim-event-row i.event-high { background: #ef4444; }
@@ -1561,15 +1562,15 @@ li::before {
 }
 .sim-chart-wrap { min-width: 0; padding-right: 18px; }
 .sim-risk-chart { width: 100%; height: 158px; overflow: visible; }
-.sim-risk-chart text { fill: #090a0a; font-size: 9px; }
+.sim-risk-chart text { fill: #b9c4cc; font-size: 9px; }
 .chart-threshold { stroke-width: 1; stroke-dasharray: 4 5; }
 .chart-high { stroke: rgba(239,68,68,0.38); }
 .chart-medium { stroke: rgba(245,158,11,0.32); }
 .chart-area { fill: rgba(57,217,138,0.08); }
 .chart-line { fill: none; stroke: #39d98a; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.chart-cursor { stroke: rgba(6, 5, 5, 0.38); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-cursor { stroke: rgba(229, 236, 240, 0.38); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-point { fill: #f5f7f8; stroke: #39d98a; stroke-width: 3; vector-effect: non-scaling-stroke; }
-.sim-chart-axis { display: flex; justify-content: space-between; color: #090a0a; font: 0.62rem 'JetBrains Mono', monospace; }
+.sim-chart-axis { display: flex; justify-content: space-between; color: #b9c4cc; font: 0.62rem 'JetBrains Mono', monospace; }
 .sim-report {
     padding-left: 18px;
     border-left: 1px solid rgba(0,0,0,0.08);
@@ -1588,7 +1589,7 @@ li::before {
     background: #151c22;
 }
 .sim-report-grid span,
-.sim-report-grid small { color: #060606; font-size: 0.61rem; }
+.sim-report-grid small { color: #aeb8c2; font-size: 0.61rem; }
 .sim-report-grid strong {
     margin: 5px 0 3px;
     color: #e7ecef;
@@ -1620,7 +1621,7 @@ li::before {
     color: #e7ecef;
     font-size: 0.78rem;
 }
-.sim-comparison-item header span { color: #0a0b0b; }
+.sim-comparison-item header span { color: #aeb8c2; }
 .sim-comparison-item svg { width: 100%; height: 110px; margin: 9px 0; }
 .sim-comparison-metrics {
     display: grid;
@@ -1629,7 +1630,7 @@ li::before {
     background: rgba(0,0,0,0.07);
 }
 .sim-comparison-metrics > div { display: grid; gap: 5px; padding: 8px; background: #11171c; }
-.sim-comparison-metrics span { color: #080808; font-size: 0.61rem; }
+.sim-comparison-metrics span { color: #aeb8c2; font-size: 0.61rem; }
 .sim-comparison-metrics strong { color: #e7ecef; font: 600 0.73rem 'JetBrains Mono', monospace; }
 .sim-comparison-summary { margin-bottom: 12px; }
 
@@ -1849,7 +1850,7 @@ li::before {
 .sim-drive-data > div:first-child { grid-template-columns: auto auto; align-items: baseline; gap: 5px; min-width: 104px; }
 .sim-drive-data strong { font: 650 1rem 'JetBrains Mono', monospace; }
 .sim-drive-data > div:first-child strong { font-size: 1.65rem; }
-.sim-drive-data span { color: #020303; font-size: 0.58rem; }
+.sim-drive-data span { color: #cbd5dc; font-size: 0.58rem; }
 .sim-drive-data > .sim-speed-dial {
     position: relative;
     isolation: isolate;
@@ -1895,7 +1896,7 @@ li::before {
     border-top: 3px solid #46a7d8;
     border-radius: 8px 0 0 0;
 }
-.sim-route-map span { color: #0b0d0e; font-size: 0.58rem; }
+.sim-route-map span { color: #cbd5dc; font-size: 0.58rem; }
 .sim-route-map strong { margin-top: 4px; color: white; font-size: 0.68rem; }
 .sim-aeb-alert {
     position: absolute;
