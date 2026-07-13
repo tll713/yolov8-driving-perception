@@ -1,10 +1,21 @@
 import platform
 import time
+import traceback
 
 from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
-from backend.services.database_service import delete_detection_record, get_detection_result
+from backend.services.database_service import (
+    delete_detection_record,
+    get_detection_result,
+)
+from backend.services.error_log_service import (
+    delete_all_error_logs,
+    delete_error_log,
+    get_error_logs,
+    log_error,
+    mark_error_handled,
+)
 from backend.services.history_service import list_history
 from backend.services.user_service import (
     UserServiceError,
@@ -12,18 +23,43 @@ from backend.services.user_service import (
     create_user_by_admin,
     delete_user_by_admin,
     list_users,
-
     update_user_by_admin,
 )
 
 admin_bp = Blueprint("admin", __name__)
 
 _confidence_threshold = 0.5
-_error_logs = []
 _start_time = time.time()
 
 
-def _service_error_response(error):
+ADMIN_LOG_CODES = {
+    1001,
+    1002,
+    1003,
+    1004,
+    1005,
+    1010,
+    1013,
+    2006,
+    3001,
+}
+
+
+def _service_error_response(error, source="admin", username=""):
+    code = getattr(error, "code", 0)
+    if code in ADMIN_LOG_CODES:
+        level = "ERROR" if code >= 3000 else "WARN"
+        log_error(
+            level=level,
+            source=source,
+            error_type=type(error).__name__,
+            message=str(error),
+            request_path=request.path,
+            request_method=request.method,
+            username=(username or "").strip(),
+            status_code=_status_from_code(code),
+            stack_trace=traceback.format_exc(),
+        )
     return jsonify(build_error_response(str(error), error.code)), _status_from_code(error.code)
 
 
@@ -35,22 +71,6 @@ def _status_from_code(code):
     if code == 1010:
         return 404
     return 400
-
-
-def _add_error_log(level, message):
-    from datetime import datetime
-
-    _error_logs.insert(
-        0,
-        {
-            "id": len(_error_logs) + 1,
-            "level": level,
-            "message": message,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-        },
-    )
-    if len(_error_logs) > 200:
-        _error_logs.pop()
 
 
 def _format_uptime():
@@ -67,13 +87,16 @@ def admin_login():
     try:
         admin = authenticate_admin(data.get("username"), data.get("password"))
     except UserServiceError as exc:
-        return _service_error_response(exc)
+        return _service_error_response(exc, "admin_login", data.get("username"))
     return jsonify(build_success_response(admin, "登录成功"))
 
 
 @admin_bp.get("/admin/users")
 def get_users():
-    users = list_users()
+    try:
+        users = list_users()
+    except UserServiceError as exc:
+        return _service_error_response(exc, "admin_list_users")
     return jsonify(build_success_response({"items": users, "total": len(users)}))
 
 
@@ -88,7 +111,7 @@ def create_user():
             data.get("status", "active"),
         )
     except UserServiceError as exc:
-        return _service_error_response(exc)
+        return _service_error_response(exc, "admin_create_user", data.get("username"))
     return jsonify(build_success_response(user, "用户已创建"))
 
 
@@ -98,7 +121,7 @@ def update_user(username):
     try:
         user = update_user_by_admin(username, data)
     except UserServiceError as exc:
-        return _service_error_response(exc)
+        return _service_error_response(exc, "admin_update_user", username)
     return jsonify(build_success_response(user, "用户已更新"))
 
 
@@ -107,7 +130,7 @@ def delete_user(username):
     try:
         delete_user_by_admin(username)
     except UserServiceError as exc:
-        return _service_error_response(exc)
+        return _service_error_response(exc, "admin_delete_user", username)
     return jsonify(build_success_response(None, "用户已删除"))
 
 
@@ -142,6 +165,7 @@ def get_all_records():
     try:
         records = list_history(username=username or None)
     except Exception as exc:
+        log_error(source="admin_list_records", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=username, status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
     return jsonify(build_success_response({"items": records, "total": len(records)}))
 
@@ -151,6 +175,7 @@ def get_record(record_id):
     try:
         record = get_detection_result(record_id)
     except Exception as exc:
+        log_error(source="admin_get_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
 
     if record is None:
@@ -163,6 +188,7 @@ def delete_record(record_id):
     try:
         deleted = delete_detection_record(record_id)
     except Exception as exc:
+        log_error(source="admin_delete_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"删除检测记录失败：{exc}", 500)), 500
 
     if not deleted:
@@ -226,12 +252,40 @@ def system_status():
 
 
 @admin_bp.get("/admin/error-logs")
-def get_error_logs():
-    return jsonify(build_success_response({"items": _error_logs, "total": len(_error_logs)}))
+def get_error_logs_route():
+    try:
+        logs = get_error_logs()
+    except Exception as exc:
+        return jsonify(build_error_response(f"查询错误日志失败：{exc}", 500)), 500
+    return jsonify(build_success_response({"items": logs, "total": len(logs)}))
 
 
 @admin_bp.delete("/admin/error-logs/<int:log_id>")
-def delete_error_log(log_id):
-    global _error_logs
-    _error_logs = [item for item in _error_logs if item["id"] != log_id]
+def delete_error_log_route(log_id):
+    try:
+        success = delete_error_log(log_id)
+    except Exception as exc:
+        return jsonify(build_error_response(f"删除错误日志失败：{exc}", 500)), 500
+    if not success:
+        return jsonify(build_error_response("日志不存在", 404)), 404
     return jsonify(build_success_response(None, "日志已删除"))
+
+
+@admin_bp.put("/admin/error-logs/<int:log_id>/handled")
+def mark_error_log_handled_route(log_id):
+    try:
+        success = mark_error_handled(log_id)
+    except Exception as exc:
+        return jsonify(build_error_response(f"标记错误日志失败：{exc}", 500)), 500
+    if not success:
+        return jsonify(build_error_response("日志不存在", 404)), 404
+    return jsonify(build_success_response(None, "已标记为已处理"))
+
+
+@admin_bp.delete("/admin/error-logs")
+def clear_error_logs_route():
+    try:
+        delete_all_error_logs()
+    except Exception as exc:
+        return jsonify(build_error_response(f"清空错误日志失败：{exc}", 500)), 500
+    return jsonify(build_success_response(None, "所有日志已清空"))

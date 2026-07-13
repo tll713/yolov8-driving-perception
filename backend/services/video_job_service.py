@@ -1,8 +1,10 @@
 from copy import deepcopy
 from threading import Lock, Thread
+import traceback
 from uuid import uuid4
 
 from backend.config import ALLOWED_VIDEO_EXTENSIONS, DEFAULT_CONFIDENCE, RESULT_DIR, UPLOAD_DIR
+from backend.services.error_log_service import log_error
 from backend.services.detection_service import (
     _validate_confidence,
     _validate_file,
@@ -122,6 +124,15 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence,
             username=username,
         )
     except Exception as exc:
+        log_error(
+            level="ERROR",
+            source="video_detection_job",
+            error_type=type(exc).__name__,
+            message=f"{original_filename}: {exc}",
+            username=(username or "").strip(),
+            status_code=500,
+            stack_trace=traceback.format_exc(),
+        )
         with _LOCK:
             _JOBS[job_id].update({"status": "failed", "progress": 100, "error": str(exc)})
         return

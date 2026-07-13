@@ -20,6 +20,11 @@ DEFAULT_MODEL_PATH = MODEL_DIR / "yolov8s.pt"
 HISTORY_FILE = LOG_DIR / "detection_history.json"
 SIMULATION_SCENARIO_FILE = LOG_DIR / "simulation_scenarios.json"
 USER_FILE = LOG_DIR / "users.json"
+ERROR_LOG_FILE = LOG_DIR / "error_logs.json"
+APP_LOG_FILE = LOG_DIR / "app.log"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
