@@ -156,15 +156,18 @@ const app = createApp({
 
         function resetDetectionResults() {
             stopVideoPolling()
+            isDetecting.value = false
             detections.value = []
             detectionTimeline.value = []
             resultVideoUrl.value = ''
             resultImageUrl.value = ''
+            maxRiskLevel.value = ''
             stats.totalCount = 0
             stats.overallRisk = '—'
             stats.riskClass = 'risk-low'
             stats.inferenceTime = '— ms'
             stats.classCounts = {}
+            stats.riskCounts = { low: 0, info: 0, medium: 0, high: 0 }
             safetyAdvice.value = []
             sceneSummary.value = null
             laneAnalysis.value = null

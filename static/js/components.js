@@ -160,8 +160,9 @@ const DisplayArea = {
         const currentFrameDetections = ref([])
 
         function riskLevelFromDetections(detections) {
+            if (!detections || !detections.length) return ''
             const priority = { low: 0, info: 1, medium: 2, high: 3 }
-            return (detections || []).reduce((maxLevel, item) => {
+            return detections.reduce((maxLevel, item) => {
                 const level = item.risk?.level || item.risk_level || 'low'
                 return (priority[level] || 0) > (priority[maxLevel] || 0) ? level : maxLevel
             }, 'low')
@@ -169,6 +170,8 @@ const DisplayArea = {
 
         //风险边框计算
         const riskBorderClass = Vue.computed(() => {
+            if (!props.fileType) return ''
+            if (!props.detections || !props.detections.length) return ''
             const level = props.fileType && props.fileType.startsWith('video/')
                 ? riskLevelFromDetections(currentFrameDetections.value)
                 : (props.maxRiskLevel || riskLevelFromDetections(props.detections))
@@ -285,6 +288,7 @@ const DisplayArea = {
 
         //获取当前车道数据
         function displayLane() {
+            if (!props.fileType) return null
             return currentLane.value || props.laneAnalysis || null
         }
         //动画循环控制
@@ -2164,31 +2168,10 @@ const HistoryPanel = {
                 </div>
                 <div class="ph-modal-body">
                     <img v-if="isImage(viewItem) && mediaUrl(viewItem)" :src="mediaUrl(viewItem)" class="ph-modal-media" alt="">
-                    <div v-else-if="isVideo(viewItem) && mediaUrl(viewItem)" class="ph-modal-video-wrap" @click="toggleModalVideo">
-                        <video :src="mediaUrl(viewItem)" class="ph-modal-media ph-modal-video" controls @play="onModalVideoPlay" @pause="onModalVideoPause" @ended="onModalVideoEnded" @timeupdate="onModalVideoTimeUpdate"></video>
-                        <div class="ph-modal-play-btn" v-if="!modalVideoPlaying">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                        </div>
-                        <div class="ph-modal-progress-bar" @click.stop="seekModalVideo">
-                            <div class="ph-modal-progress-fill" :style="{ width: modalVideoProgress + '%' }"></div>
-                        </div>
+                    <div v-else-if="isVideo(viewItem) && mediaUrl(viewItem)" class="ph-modal-video-wrap">
+                        <video :src="mediaUrl(viewItem)" class="ph-modal-media ph-modal-video" controls playsinline></video>
                     </div>
                     <div v-else class="empty-block">暂无可预览的结果文件</div>
-                </div>
-                <div style="padding:0 16px 16px;">
-                    <div class="metric-row">
-                        <span>检测时间 {{ formatTime(viewItem.created_at) }}</span>
-                        <span>目标数 {{ viewItem.count || viewItem.total_objects || 0 }}</span>
-                        <span :class="riskClass(overallRisk(viewItem))">{{ riskLabel(overallRisk(viewItem)) }}</span>
-                    </div>
-                    <div v-if="viewItem.detections?.length" class="risk-det-sub" style="margin-top:12px;">
-                        <div class="risk-det-item" v-for="(d, di) in viewItem.detections" :key="di">
-                            <strong>{{ d.class_name_cn || d.class_name }}</strong>
-                            <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
-                            <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
-                            <span class="risk-det-reason">{{ d.risk?.message || d.risk?.reason || d.risk_reason || '' }}</span>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
