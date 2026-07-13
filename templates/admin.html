@@ -720,6 +720,7 @@
             apiJson(url).then(function(d){
                 if(d.code!==0) { alert(d.message || '加载检测记录失败'); return; }
                 var items = d.data.items || [];
+                allRecords = items;
                 document.getElementById('records-count').textContent = (currentRecordUsername ? currentRecordUsername + '：' : '') + '共 ' + items.length + ' 条记录';
                 var tbody = document.getElementById('records-body');
                 var empty = document.getElementById('records-empty');
@@ -749,39 +750,39 @@
             }).catch(function(){ alert('删除失败，请检查后端服务是否启动'); });
         }
 
+        var allRecords = [];
+
         function viewRecordDetail(id) {
-            apiJson('/api/admin/records/' + encodeURIComponent(id)).then(function(d){
-                if (d.code !== 0) { alert(d.message || '查询详情失败'); return; }
-                var item = d.data || {};
-                var mediaUrl = recordMediaUrl(item);
-                var isVideo = String(mediaUrl).toLowerCase().match(/\.(mp4|avi|mov|mkv|webm)$/);
-                var mediaHtml = mediaUrl
-                    ? (isVideo
-                        ? '<video class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" controls></video>'
-                        : '<img class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" alt="检测结果">')
-                    : '<div class="admin-empty">暂无可预览的结果文件</div>';
-                var detections = item.detections || [];
-                var rows = detections.map(function(det) {
-                    var risk = det.risk || {};
-                    return '<div class="admin-detail-row">' +
-                        '<strong>' + escapeHtml(det.class_name_cn || det.class_name || '-') + '</strong>' +
-                        '<span>' + ((det.confidence || 0) * 100).toFixed(1) + '%</span>' +
-                        '<span>' + riskBadge(risk.level || 'low') + '</span>' +
-                        '<span>' + escapeHtml(risk.message || risk.reason || '-') + '</span>' +
-                    '</div>';
-                }).join('');
-                document.getElementById('record-detail-body').innerHTML =
-                    '<div class="admin-detail-grid">' +
-                        '<div><span>检测时间</span><strong>' + escapeHtml(item.created_at || '-') + '</strong></div>' +
-                        '<div><span>文件名</span><strong>' + escapeHtml(item.original_filename || item.filename || '-') + '</strong></div>' +
-                        '<div><span>目标数</span><strong>' + (item.count || item.total_objects || 0) + '</strong></div>' +
-                        '<div><span>风险等级</span><strong>' + riskBadge(item.max_risk_level) + '</strong></div>' +
-                    '</div>' +
-                    mediaHtml +
-                    '<h4 style="margin:12px 0 8px;">目标明细</h4>' +
-                    '<div class="admin-detail-list">' + (rows || '<div class="admin-empty">暂无目标明细</div>') + '</div>';
-                document.getElementById('record-modal').style.display = 'flex';
-            }).catch(function(){ alert('查询详情失败，请检查后端服务是否启动'); });
+            var item = allRecords.find(function(r) { return String(r.record_id || r.id) === String(id); });
+            if (!item) { alert('未找到该记录'); return; }
+            var mediaUrl = recordMediaUrl(item);
+            var isVideo = String(mediaUrl).toLowerCase().match(/\.(mp4|avi|mov|mkv|webm)$/);
+            var mediaHtml = mediaUrl
+                ? (isVideo
+                    ? '<video class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" controls></video>'
+                    : '<img class="admin-detail-media" src="' + escapeHtml(mediaUrl) + '" alt="检测结果">')
+                : '<div class="admin-empty">暂无可预览的结果文件</div>';
+            var detections = item.detections || [];
+            var rows = detections.map(function(det) {
+                var risk = det.risk || {};
+                return '<div class="admin-detail-row">' +
+                    '<strong>' + escapeHtml(det.class_name_cn || det.class_name || '-') + '</strong>' +
+                    '<span>' + ((det.confidence || 0) * 100).toFixed(1) + '%</span>' +
+                    '<span>' + riskBadge(risk.level || 'low') + '</span>' +
+                    '<span>' + escapeHtml(risk.message || risk.reason || '-') + '</span>' +
+                '</div>';
+            }).join('');
+            document.getElementById('record-detail-body').innerHTML =
+                '<div class="admin-detail-grid">' +
+                    '<div><span>检测时间</span><strong>' + escapeHtml(item.created_at || '-') + '</strong></div>' +
+                    '<div><span>文件名</span><strong>' + escapeHtml(item.original_filename || item.filename || '-') + '</strong></div>' +
+                    '<div><span>目标数</span><strong>' + (item.count || item.total_objects || 0) + '</strong></div>' +
+                    '<div><span>风险等级</span><strong>' + riskBadge(item.max_risk_level) + '</strong></div>' +
+                '</div>' +
+                mediaHtml +
+                '<h4 style="margin:12px 0 8px;">目标明细</h4>' +
+                '<div class="admin-detail-list">' + (rows || '<div class="admin-empty">暂无目标明细</div>') + '</div>';
+            document.getElementById('record-modal').style.display = 'flex';
         }
 
         function closeRecordModal() {
