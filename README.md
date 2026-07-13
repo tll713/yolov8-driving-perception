@@ -1,15 +1,19 @@
-# YOLOv8 自动驾驶场景感知与风险分析系统
+# YOLOv8 自动驾驶场景感知与仿真系统
 
-这是一个面向实训演示的 Flask + Vue + YOLOv8 项目，支持道路图片检测、视频逐帧检测、驾驶风险评估、检测历史统计、可解释算法展示和第一人称 3D 风险仿真。
+这是一个面向软件工程实训的自动驾驶场景感知与仿真系统，基于 Flask + Vue + YOLOv8 实现道路目标检测、风险评估、车道趋势感知、驾驶建议生成、检测历史管理、用户权限管理和第一人称 3D 风险仿真。
 
-## 功能
+系统从早期的道路目标风险分析扩展为完整的场景感知与仿真平台：普通用户可以上传图片或视频进行检测，查看自己的检测历史；管理员可以维护用户、管理检测记录、查看系统状态和调整检测阈值。
 
-- 图片目标检测：识别车辆、行人、两轮车、交通灯、停止标志等道路目标。
-- 视频目标检测：支持同步视频检测，也支持异步任务轮询，生成带标注的视频结果和逐帧检测时间线。
-- 风险分析：结合目标类别、置信度、画面位置、自车行驶走廊重叠度和距离估计进行风险评分。
-- 展示面板：展示检测结果、风险明细、安全建议、算法决策链、统计看板和 HTML 报告。
-- 风险仿真：使用本地 Three.js、Draco 和 GLTF 资产渲染第一人称道路与天气效果；后端按天气视距、路面制动效率、CPA 冲突、AEB 延迟/制动力爬升、目标加速度和事件脚本生成时间线，并支持自定义场景持久化、倍速回放及 AEB 开关对比。置信度与 FPS 为天气衰减模型生成的仿真指标。
-- 历史记录：优先读取 MySQL 检测记录，数据库不可用时回退到本地 JSON 历史。
+## 核心功能
+
+- 用户认证与权限管理：支持用户注册、登录、个人信息维护；管理员可创建、编辑、禁用、启用和删除普通用户。
+- 道路目标检测：支持图片检测、同步视频检测和异步视频检测任务，识别车辆、行人、公交车、卡车、摩托车等道路目标。
+- 风险评估与预警：根据目标类别、置信度、画面位置、目标面积、行驶区域和距离估计计算低/中/高风险。
+- 车道与道路趋势感知：结合车道线和目标分布分析直行、左转、右转、变道或保持观察等驾驶建议。
+- 检测历史管理：普通用户只能查看自己的检测记录；管理员可以查看、筛选、详情查看和删除所有用户检测记录。
+- MySQL 数据持久化：用户信息、检测记录、检测目标和风险日志统一存储到 MySQL，不再使用本地 JSON 作为业务数据来源。
+- 3D 风险仿真：支持预设场景、自定义场景、天气影响、车速调节、风险时间线、倍速回放和 AEB 对比仿真。
+- 后台管理系统：提供置信度阈值设置、检测记录管理、系统状态监控、错误日志查看和用户管理。
 
 ## 项目结构
 
@@ -25,6 +29,8 @@ yolov8-driving-perception/
 │  ├─ api_contract.py
 │  ├─ config.py
 │  ├─ routes/
+│  │  ├─ admin.py
+│  │  ├─ auth.py
 │  │  ├─ detections.py
 │  │  ├─ health.py
 │  │  ├─ models.py
@@ -34,9 +40,11 @@ yolov8-driving-perception/
 │     ├─ detection_service.py
 │     ├─ demo_analysis_service.py
 │     ├─ history_service.py
+│     ├─ lane_service.py
 │     ├─ model_service.py
 │     ├─ result_renderer.py
 │     ├─ simulation_service.py
+│     ├─ user_service.py
 │     └─ video_job_service.py
 ├─ templates/
 ├─ static/
@@ -46,6 +54,32 @@ yolov8-driving-perception/
 ├─ models/
 └─ tests/
 ```
+
+## 运行环境
+
+- Python 3.13+ / 3.14
+- MySQL 8.x
+- YOLOv8 / Ultralytics
+- Flask
+- Vue 3
+- OpenCV
+- PyTorch
+
+## 配置
+
+复制 `.env.example` 为 `.env`，并填写数据库连接信息：
+
+```env
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=yolov8_driving
+USER_STORAGE=mysql
+USER_TABLE_NAME=用户表
+```
+
+当前项目的用户数据和检测业务数据均使用 MySQL。上传文件和检测结果文件保存在项目本地目录中，MySQL 保存对应文件路径。
 
 ## 运行
 
@@ -75,19 +109,36 @@ models/yolov8s.pt
 ## 常用接口
 
 ```http
-GET  /api/health
-GET  /api/models/current
-POST /api/detections/images
-POST /api/detections/videos
-POST /api/detections/videos/jobs
-GET  /api/detections/videos/jobs/<job_id>
-GET  /api/detections/history
-POST /api/detections/history/clear
-GET  /api/detections/records/<record_id>
-GET  /api/simulation/presets
-POST /api/simulation/risk
-GET  /api/simulation/scenarios
-POST /api/simulation/scenarios
+GET    /api/health
+GET    /api/models/current
+
+POST   /api/auth/register
+POST   /api/auth/login
+GET    /api/auth/profile/<username>
+PUT    /api/auth/profile/<username>
+
+POST   /api/detections/images
+POST   /api/detections/videos
+POST   /api/detections/videos/jobs
+GET    /api/detections/videos/jobs/<job_id>
+GET    /api/detections/history?username=<username>
+POST   /api/detections/history/clear
+GET    /api/detections/records/<record_id>
+
+POST   /api/admin/login
+GET    /api/admin/users
+POST   /api/admin/users
+PUT    /api/admin/users/<username>
+DELETE /api/admin/users/<username>
+GET    /api/admin/records
+GET    /api/admin/records/<record_id>
+DELETE /api/admin/records/<record_id>
+GET    /api/admin/system-status
+
+GET    /api/simulation/presets
+POST   /api/simulation/risk
+GET    /api/simulation/scenarios
+POST   /api/simulation/scenarios
 DELETE /api/simulation/scenarios/<scenario_id>
 ```
 
@@ -100,6 +151,15 @@ DELETE /api/simulation/scenarios/<scenario_id>
   "data": {}
 }
 ```
+
+## 数据存储说明
+
+- `用户表`：保存普通用户和管理员账号信息。
+- `检测记录表`：保存每次图片或视频检测的主记录。
+- `检测目标表`：保存每条检测记录中的目标框、类别、置信度和位置。
+- `风险日志表`：保存中高风险目标的风险等级、提示和原因。
+- `uploads/`：保存用户上传的原始图片或视频。
+- `results/`：保存渲染后的检测结果图片或视频。
 
 ## 验证
 
