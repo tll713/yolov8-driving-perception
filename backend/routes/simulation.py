@@ -1,6 +1,9 @@
+import traceback
+
 from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
+from backend.services.error_log_service import log_error
 from backend.services.simulation_scenario_service import (
     delete_custom_scenario,
     list_custom_scenarios,
@@ -33,6 +36,7 @@ def save_simulation_scenario():
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except Exception as exc:
+        log_error(source="save_simulation_scenario", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"场景保存失败：{exc}", 500)), 500
     return jsonify(build_success_response(scenario, "场景已保存"))
 
@@ -42,6 +46,7 @@ def delete_simulation_scenario(scenario_id):
     try:
         deleted = delete_custom_scenario(scenario_id)
     except Exception as exc:
+        log_error(source="delete_simulation_scenario", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"场景删除失败：{exc}", 500)), 500
     if not deleted:
         return jsonify(build_error_response("场景不存在", 404)), 404
@@ -55,6 +60,7 @@ def simulation_risk():
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except Exception as exc:
+        log_error(source="simulation_risk", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"仿真计算失败：{exc}", 500)), 500
 
     return jsonify(build_success_response(result))

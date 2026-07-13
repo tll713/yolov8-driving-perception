@@ -1,3 +1,5 @@
+import traceback
+
 from flask import Blueprint, jsonify, request
 
 from backend.api_contract import build_error_response, build_success_response
@@ -5,6 +7,7 @@ from backend.config import DEFAULT_CONFIDENCE
 from backend.services.database_service import get_detection_result
 from backend.services.demo_analysis_service import build_dashboard
 from backend.services.detection_service import detect_uploaded_image, detect_uploaded_video
+from backend.services.error_log_service import log_error
 from backend.services.history_service import clear_history, list_history
 from backend.services.video_job_service import get_video_detection_job, start_video_detection_job
 
@@ -28,8 +31,10 @@ def detect_image_endpoint():
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
+        log_error(source="detect_image_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(str(exc), 503)), 503
     except Exception as exc:
+        log_error(source="detect_image_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"检测失败：{exc}", 500)), 500
 
     return jsonify(build_success_response(result))
@@ -51,8 +56,10 @@ def detect_video_endpoint():
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
+        log_error(source="detect_video_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(str(exc), 503)), 503
     except Exception as exc:
+        log_error(source="detect_video_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"检测失败：{exc}", 500)), 500
 
     return jsonify(build_success_response(result))
@@ -74,8 +81,10 @@ def create_video_detection_job_endpoint():
     except ValueError as exc:
         return jsonify(build_error_response(str(exc), 400)), 400
     except RuntimeError as exc:
+        log_error(source="create_video_detection_job_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=503, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(str(exc), 503)), 503
     except Exception as exc:
+        log_error(source="create_video_detection_job_endpoint", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=(request.form.get("username") or "").strip(), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"创建视频检测任务失败：{exc}", 500)), 500
 
     return jsonify(build_success_response(job)), 202
@@ -96,6 +105,7 @@ def detection_history():
     try:
         items = list_history(username=username or None)
     except Exception as exc:
+        log_error(source="detection_history", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=username, status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测历史失败：{exc}", 500)), 500
     return jsonify(build_success_response({"items": items, "dashboard": build_dashboard(items)}))
 
@@ -107,6 +117,7 @@ def clear_detection_history():
     try:
         clear_history(username=username or None)
     except Exception as exc:
+        log_error(source="clear_detection_history", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=username, status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"清空检测历史失败：{exc}", 500)), 500
     return jsonify(build_success_response({"cleared": True}))
 
@@ -116,6 +127,7 @@ def detection_record(record_id):
     try:
         result = get_detection_result(record_id)
     except Exception as exc:
+        log_error(source="detection_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测结果失败：{exc}", 500)), 500
 
     if result is None:

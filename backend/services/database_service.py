@@ -7,6 +7,7 @@ from risk import RISK_LABELS
 
 RISK_ORDER = {"low": 1, "info": 2, "medium": 3, "high": 4}
 MAX_RISK_LOGS_PER_RECORD = 20
+ERROR_LOG_TABLE = "`错误日志表`"
 
 USER_TABLE = "`用户表`"
 RECORD_TABLE = "`检测记录表`"
@@ -277,6 +278,125 @@ def save_detection_result(result):
 
         conn.commit()
         return record_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def save_error_log(
+    level="ERROR",
+    source="system",
+    message="",
+    error_type="",
+    request_path="",
+    request_method="",
+    username="",
+    status_code=None,
+    stack_trace="",
+):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                INSERT INTO {ERROR_LOG_TABLE} (
+                    `错误级别`, `错误来源`, `错误类型`, `错误信息`,
+                    `请求路径`, `请求方法`, `用户名`, `状态码`, `堆栈信息`, `是否已处理`
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                """,
+                [
+                    level,
+                    source,
+                    error_type,
+                    message,
+                    request_path,
+                    request_method,
+                    username,
+                    status_code,
+                    stack_trace,
+                ],
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def list_error_logs(limit=200):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    `编号` AS id,
+                    `错误级别` AS level,
+                    `错误来源` AS source,
+                    `错误类型` AS error_type,
+                    `错误信息` AS message,
+                    `请求路径` AS request_path,
+                    `请求方法` AS request_method,
+                    `用户名` AS username,
+                    `状态码` AS status_code,
+                    `是否已处理` AS handled,
+                    DATE_FORMAT(`创建时间`, '%%Y-%%m-%%d %%H:%%i:%%s') AS created_at
+                FROM {ERROR_LOG_TABLE}
+                ORDER BY `编号` DESC
+                LIMIT %s
+                """,
+                [limit],
+            )
+            return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def delete_error_log_by_id(log_id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"DELETE FROM {ERROR_LOG_TABLE} WHERE `编号` = %s",
+                [log_id],
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def mark_error_log_handled(log_id):
+    """将指定错误日志标记为已处理"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE {ERROR_LOG_TABLE} SET `是否已处理` = 1 WHERE `编号` = %s",
+                [log_id],
+            )
+            affected = cursor.rowcount
+        conn.commit()
+        return affected > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_all_error_logs():
+    """清空所有错误日志"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(f"DELETE FROM {ERROR_LOG_TABLE}")
+        conn.commit()
     except Exception:
         conn.rollback()
         raise
