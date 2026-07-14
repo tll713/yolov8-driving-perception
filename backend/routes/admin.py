@@ -14,7 +14,6 @@ from backend.services.error_log_service import (
     delete_error_log,
     get_error_logs,
     log_error,
-    mark_error_handled,
 )
 from backend.services.history_service import list_history
 from backend.services.user_service import (
@@ -269,17 +268,6 @@ def delete_error_log_route(log_id):
     if not success:
         return jsonify(build_error_response("日志不存在", 404)), 404
     return jsonify(build_success_response(None, "日志已删除"))
-
-
-@admin_bp.put("/admin/error-logs/<int:log_id>/handled")
-def mark_error_log_handled_route(log_id):
-    try:
-        success = mark_error_handled(log_id)
-    except Exception as exc:
-        return jsonify(build_error_response(f"标记错误日志失败：{exc}", 500)), 500
-    if not success:
-        return jsonify(build_error_response("日志不存在", 404)), 404
-    return jsonify(build_success_response(None, "已标记为已处理"))
 
 
 @admin_bp.delete("/admin/error-logs")

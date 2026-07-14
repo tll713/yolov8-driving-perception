@@ -20,7 +20,6 @@ API_ENDPOINTS = {
     "simulation_scenarios": "/api/simulation/scenarios",
     "simulation_scenario_delete": "/api/simulation/scenarios/<scenario_id>",
     "admin_error_logs": "/api/admin/error-logs",
-    "admin_error_log_handled": "/api/admin/error-logs/<log_id>/handled",
 }
 
 

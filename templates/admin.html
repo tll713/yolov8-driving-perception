@@ -393,8 +393,6 @@
         }
         .admin-detail-row:last-child { border-bottom: none; }
 
-        .log-unhandled { border-left: 3px solid var(--red); }
-        .log-unhandled:hover td { background: rgba(239,68,68,0.04) !important; }
     </style>
 </head>
 <body>
@@ -562,7 +560,6 @@
                                         <th>状态码</th>
                                         <th>次数</th>
                                         <th>最近时间</th>
-                                        <th>处理</th>
                                         <th>操作</th>
                                     </tr>
                                 </thead>
@@ -977,7 +974,6 @@
                         status_code: item.status_code,
                         message: item.message,
                         level: item.level,
-                        handled: item.handled,
                         count: 0,
                         usernames: [],
                         firstTime: item.created_at,
@@ -995,7 +991,6 @@
                 if (item.request_path && g.request_paths.indexOf(item.request_path) === -1) {
                     g.request_paths.push(item.request_path);
                 }
-                if (g.handled !== 1 && item.handled === 1) g.handled = 1;
                 if (item.level === 'ERROR' || item.level === 'CRITICAL') g.level = item.level;
                 // 取更早的首次时间
                 if (item.created_at && item.created_at < g.firstTime) g.firstTime = item.created_at;
@@ -1024,11 +1019,10 @@
             var groupBtn = document.getElementById('logs-group-btn');
 
             // stats
-            var errCount = 0, warnCount = 0, unhandled = 0;
+            var errCount = 0, warnCount = 0;
             items.forEach(function(l) {
                 if (l.level === 'ERROR' || l.level === 'CRITICAL') errCount++;
                 else if (l.level === 'WARN') warnCount++;
-                if (l.handled !== 1) unhandled++;
             });
 
             if (items.length > 0) {
@@ -1036,8 +1030,7 @@
                 statsDiv.innerHTML =
                     '<div class="admin-stat-chip"><strong>' + items.length + '</strong> 条日志</div>' +
                     '<div class="admin-stat-chip" style="color:var(--red);"><strong>' + errCount + '</strong> 错误</div>' +
-                    '<div class="admin-stat-chip" style="color:var(--yellow);"><strong>' + warnCount + '</strong> 警告</div>' +
-                    '<div class="admin-stat-chip" style="color:var(--accent);"><strong>' + unhandled + '</strong> 未处理</div>';
+                    '<div class="admin-stat-chip" style="color:var(--yellow);"><strong>' + warnCount + '</strong> 警告</div>';
             } else {
                 groupBtn.style.display = 'none';
                 statsDiv.innerHTML = '';
@@ -1058,8 +1051,6 @@
             tbody.innerHTML = displayItems.map(function(g, idx) {
                 var lvlCls = g.level === 'ERROR' || g.level === 'CRITICAL' ? 'admin-badge-high'
                     : g.level === 'WARN' ? 'admin-badge-medium' : 'admin-badge-info';
-                var handledCls = g.handled === 1 ? '' : 'admin-badge-high';
-                var handledText = g.handled === 1 ? '已处理' : '未处理';
                 var userDisplay = g.usernames && g.usernames.length > 0
                     ? g.usernames.map(function(u) { return '<span style="color:var(--accent);">' + escapeHtml(u) + '</span>'; }).join(', ')
                     : '<span style="color:var(--text-muted);">-</span>';
@@ -1069,10 +1060,9 @@
                 var expandId = 'log-detail-' + idx;
                 var isGroup = g.count > 1;
                 var countHtml = isGroup ? '<span style="font-weight:700;color:var(--accent);">' + g.count + '</span>' : '1';
-                var rowClass = g.handled !== 1 ? 'log-unhandled' : '';
 
-                return '<tr class="' + rowClass + '" style="cursor:pointer;" onclick="toggleLogDetail(\'' + expandId + '\', this)">' +
-                    '<td><span style="font-size:0.7rem;color:var(--text-muted);">' + (isGroup ? '▼' : '') + '</span></td>' +
+                return '<tr style="cursor:pointer;" onclick="toggleLogDetail(\'' + expandId + '\', this)">' +
+                    '<td><span style="font-size:0.7rem;color:var(--text-muted);">▼</span></td>' +
                     '<td><strong>' + sourceCn(g.source) + '</strong></td>' +
                     '<td><span class="admin-badge ' + lvlCls + '">' + (g.level || '-') + '</span></td>' +
                     '<td class="admin-log-msg" title="' + escapeHtml(g.message || '') + '&#10;请求路径: ' + escapeHtml(pathDisplay) + '">' + msgToCn(g.message) + '</td>' +
@@ -1080,14 +1070,12 @@
                     '<td>' + statusText(g.status_code) + '</td>' +
                     '<td>' + countHtml + '</td>' +
                     '<td style="font-size:0.78rem;">' + (g.lastTime || '-') + '</td>' +
-                    '<td><span class="admin-badge ' + handledCls + '">' + handledText + '</span></td>' +
                     '<td><div class="admin-user-tools" onclick="event.stopPropagation();">' +
-                        (g.handled !== 1 ? '<button class="btn btn-ghost btn-sm" onclick="markLogHandled(\'' + g.ids.join(',') + '\')">标记处理</button>' : '') +
                         '<button class="btn btn-ghost btn-sm" onclick="deleteLogGroup(\'' + g.ids.join(',') + '\')">删除</button>' +
                     '</div></td>' +
                 '</tr>' +
                 '<tr id="' + expandId + '" style="display:none;">' +
-                    '<td colspan="10" style="padding:12px 22px;background:rgba(0,0,0,0.03);font-size:0.78rem;">' +
+                    '<td colspan="9" style="padding:12px 22px;background:rgba(0,0,0,0.03);font-size:0.78rem;">' +
                         '<div class="admin-detail-grid" style="margin:0;">' +
                             '<div><span>错误类型</span><strong>' + errorTypeCn(g.error_type) + '</strong></div>' +
                             '<div><span>原始类型</span><strong>' + escapeHtml(g.error_type || '-') + '</strong></div>' +
@@ -1122,7 +1110,7 @@
             return items.map(function(item) {
                 return {
                     source: item.source, error_type: item.error_type, status_code: item.status_code,
-                    message: item.message, level: item.level, handled: item.handled, count: 1,
+                    message: item.message, level: item.level, count: 1,
                     usernames: item.username ? [item.username] : [],
                     firstTime: item.created_at, lastTime: item.created_at,
                     ids: [item.id], request_paths: item.request_path ? [item.request_path] : [],
@@ -1135,23 +1123,6 @@
             var btn = document.getElementById('logs-group-btn');
             btn.textContent = groupByEnabled ? '分组视图' : '原始视图';
             renderLogs();
-        }
-
-        function markLogHandled(idsStr) {
-            var ids = idsStr.split(',').map(Number);
-            if (ids.length === 0) return;
-            // 逐个标记
-            var promises = ids.map(function(id) {
-                return fetch('/api/admin/error-logs/' + id + '/handled', { method: 'PUT' }).then(function(r) { return r.json(); });
-            });
-            Promise.all(promises).then(function() {
-                // 更新本地数据
-                ids.forEach(function(id) {
-                    var entry = allLogEntries.find(function(e) { return e.id === id; });
-                    if (entry) entry.handled = 1;
-                });
-                renderLogs();
-            });
         }
 
         function deleteLogGroup(idsStr) {
@@ -1352,7 +1323,6 @@
         window.deleteUser = deleteUser;
         window.loadLogs = loadLogs;
         window.deleteLog = deleteLog;
-        window.markLogHandled = markLogHandled;
         window.deleteLogGroup = deleteLogGroup;
         window.clearAllLogs = clearAllLogs;
         window.toggleGroupView = toggleGroupView;
