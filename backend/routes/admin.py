@@ -55,11 +55,28 @@ def _service_error_response(error, source="admin", username=""):
             message=str(error),
             request_path=request.path,
             request_method=request.method,
-            username=(username or "").strip(),
+            username=_request_username(username),
             status_code=_status_from_code(code),
             stack_trace=traceback.format_exc(),
         )
     return jsonify(build_error_response(str(error), error.code)), _status_from_code(error.code)
+
+
+def _request_username(fallback=""):
+    header_username = (
+        request.headers.get("X-Username")
+        or request.headers.get("X-Current-User")
+        or request.headers.get("X-Admin-User")
+        or ""
+    ).strip()
+    if header_username:
+        return header_username
+
+    arg_username = (request.args.get("username") or "").strip()
+    if arg_username:
+        return arg_username
+
+    return (fallback or "").strip()
 
 
 def _status_from_code(code):
@@ -164,7 +181,7 @@ def get_all_records():
     try:
         records = list_history(username=username or None)
     except Exception as exc:
-        log_error(source="admin_list_records", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=username, status_code=500, stack_trace=traceback.format_exc())
+        log_error(source="admin_list_records", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=_request_username(username), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
     return jsonify(build_success_response({"items": records, "total": len(records)}))
 
@@ -174,7 +191,7 @@ def get_record(record_id):
     try:
         record = get_detection_result(record_id)
     except Exception as exc:
-        log_error(source="admin_get_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
+        log_error(source="admin_get_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=_request_username(), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"查询检测记录失败：{exc}", 500)), 500
 
     if record is None:
@@ -187,7 +204,7 @@ def delete_record(record_id):
     try:
         deleted = delete_detection_record(record_id)
     except Exception as exc:
-        log_error(source="admin_delete_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username="", status_code=500, stack_trace=traceback.format_exc())
+        log_error(source="admin_delete_record", error_type=type(exc).__name__, message=str(exc), request_path=request.path, request_method=request.method, username=_request_username(), status_code=500, stack_trace=traceback.format_exc())
         return jsonify(build_error_response(f"删除检测记录失败：{exc}", 500)), 500
 
     if not deleted:

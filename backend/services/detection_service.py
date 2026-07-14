@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 from backend.config import (
     ALLOWED_IMAGE_EXTENSIONS,
@@ -142,6 +143,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
     all_detections = []
     last_frame_detections = []
     last_lane_analysis = None
+    frame_inference_times = []
     frame_idx = 0
     sample_interval = 1
 
@@ -156,7 +158,10 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
             is_sample_frame = frame_idx % sample_interval == 0
             if is_sample_frame:
                 frame_lane_analysis = analyze_lane_image(frame)
+                frame_inference_started_at = time.perf_counter()
                 results = model.predict(frame, conf=confidence, verbose=False)
+                frame_inference_ms = round((time.perf_counter() - frame_inference_started_at) * 1000, 2)
+                frame_inference_times.append(frame_inference_ms)
                 for result in results:
                     names = result.names
                     for box in result.boxes:
@@ -226,6 +231,8 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
                         "frame_max_risk_level": frame_risk_summary["max_risk_level"],
                         "frame_max_risk_score": frame_risk_summary["max_risk_score"],
                         "frame_risk_counts": frame_risk_summary["risk_counts"],
+                        "frame_inference_time_ms": frame_inference_ms,
+                        "average_frame_inference_time_ms": round(sum(frame_inference_times) / len(frame_inference_times), 2),
                         **risk_summary,
                         **_build_demo_fields(all_detections),
                     }
@@ -239,6 +246,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
 
     risk_summary = summarize_risk(all_detections)
     processed_seconds = round(frame_idx / fps, 2) if fps else None
+    inference_time_ms = round(sum(frame_inference_times) / len(frame_inference_times), 2) if frame_inference_times else 0
     result = {
         "type": "video",
         "username": (username or "").strip(),
@@ -259,7 +267,7 @@ def detect_video_file(upload_path, original_filename, confidence=DEFAULT_CONFIDE
         "duration_sec": processed_seconds,
         "count": len(all_detections),
         "total_objects": len(all_detections),
-        "inference_time_ms": 0,
+        "inference_time_ms": inference_time_ms,
         **risk_summary,
         "lane_analysis": _lane_analysis_without_visual_lines(last_lane_analysis),
         **_build_demo_fields(all_detections),

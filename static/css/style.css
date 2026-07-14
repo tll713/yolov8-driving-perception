@@ -461,7 +461,16 @@ li::before {
     position: absolute; bottom: 6px; right: 6px; width: 28px; height: 28px;
     border-radius: 50%; background: rgba(0,0,0,0.6); color: white;
     display: flex; align-items: center; justify-content: center;
-    font-size: 0.7rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+}
+.ph-play-icon::before {
+    content: "";
+    width: 0;
+    height: 0;
+    margin-left: 2px;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 9px solid #fff;
 }
 .ph-thumb-empty svg { opacity: 0.3; }
 .ph-meta { display: flex; flex-direction: column; gap: 4px; }
@@ -2011,7 +2020,24 @@ li::before {
 .sim-kpi { min-height: 88px; padding: 10px; background: rgba(15,22,27,0.82); }
 .sim-kpi > strong { margin: 9px 3px 4px 0; font-size: 1.25rem; }
 .sim-decision { padding: 10px 12px; }
-.sim-events { min-height: 90px; padding: 10px 12px; background: transparent; }
+.sim-events {
+    min-height: 90px;
+    padding: 12px 14px;
+    background: rgba(6,10,14,0.82);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.sim-events .sim-subhead span { color: #f1f5f9; }
+.sim-events .sim-subhead strong { color: #91f2bd; }
+.sim-events .sim-event-row {
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    color: #e6edf3;
+}
+.sim-events .sim-event-row time { color: #f8fafc; }
+.sim-events .sim-event-row span {
+    color: #e6edf3;
+    font-weight: 550;
+}
 .weather-night .sim-lane-assist span { box-shadow: 0 0 13px rgba(57,217,138,0.72); }
 .weather-fog .sim-weather-layer { z-index: 3; opacity: 0.42; }
 @media (max-width: 1180px) {

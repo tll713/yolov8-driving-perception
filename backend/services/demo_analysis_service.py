@@ -23,6 +23,15 @@ def _class_label(item):
     return item.get("class_name_cn") or item.get("class_name") or "目标"
 
 
+def _positive_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    # 旧版本视频记录保存的是整段处理总耗时，通常会远高于单帧推理耗时。
+    return number if 0 < number <= 10000 else None
+
+
 def _risk_label(level):
     labels = {
         "high": "高风险",
@@ -236,11 +245,11 @@ def build_dashboard(history_items):
     total_objects = sum(int(item.get("count") or item.get("total_objects") or 0) for item in history_items)
     high_risk_records = sum(1 for item in history_items if item.get("max_risk_level") == "high")
     inference_times = [
-        float(item.get("inference_time_ms"))
-        for item in history_items
-        if item.get("inference_time_ms") not in (None, "")
+        value
+        for value in (_positive_float(item.get("inference_time_ms")) for item in history_items)
+        if value is not None
     ]
-    average_time = round(sum(inference_times) / len(inference_times), 2) if inference_times else 0
+    average_time = round(sum(inference_times) / len(inference_times), 2) if inference_times else None
 
     class_counter = Counter()
     for item in history_items:

@@ -62,7 +62,7 @@ const app = createApp({
 
         async function fetchHealth() {
             try {
-                const res = await fetch('/api/health')
+                const res = await authFetch('/api/health')
                 const json = await res.json()
                 if (json.code === 0) healthStatus.value = json.data
             } catch { healthStatus.value = null }
@@ -70,7 +70,7 @@ const app = createApp({
 
         async function fetchModelInfo() {
             try {
-                const res = await fetch('/api/models/current')
+                const res = await authFetch('/api/models/current')
                 const json = await res.json()
                 if (json.code === 0) modelInfo.value = json.data
             } catch { modelInfo.value = null }
@@ -79,7 +79,7 @@ const app = createApp({
         async function fetchHistory() {
             try {
                 const userQuery = currentUser.value ? `?username=${encodeURIComponent(currentUser.value)}` : ''
-                const res = await fetch('/api/detections/history' + userQuery)
+                const res = await authFetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code === 0) {
                     dashboard.value = json.data.dashboard || {}
@@ -96,7 +96,7 @@ const app = createApp({
 
         async function fetchSimulationPresets() {
             try {
-                const res = await fetch('/api/simulation/presets')
+                const res = await authFetch('/api/simulation/presets')
                 const json = await res.json()
                 if (json.code === 0) {
                     simulationPresets.value = json.data.items || []
@@ -107,7 +107,7 @@ const app = createApp({
 
         async function fetchSimulationScenarios() {
             try {
-                const res = await fetch('/api/simulation/scenarios')
+                const res = await authFetch('/api/simulation/scenarios')
                 const json = await res.json()
                 simulationCustomScenarios.value = json.code === 0 ? (json.data.items || []) : []
             } catch { simulationCustomScenarios.value = [] }
@@ -119,6 +119,28 @@ const app = createApp({
             if (levels.includes('medium')) return 'medium'
             if (levels.includes('info')) return 'info'
             return 'low'
+        }
+
+        function currentOperator() {
+            return currentUser.value || localStorage.getItem('currentUser') || ''
+        }
+
+        function withUsername(url) {
+            const username = currentOperator()
+            if (!url || !username) return url || ''
+            const joiner = url.indexOf('?') === -1 ? '?' : '&'
+            return `${url}${joiner}username=${encodeURIComponent(username)}`
+        }
+
+        function authFetch(url, options) {
+            const nextOptions = Object.assign({}, options || {})
+            const headers = new Headers(nextOptions.headers || {})
+            const username = currentOperator()
+            if (username && !headers.has('X-Username')) {
+                headers.set('X-Username', username)
+            }
+            nextOptions.headers = headers
+            return fetch(url, nextOptions)
         }
 
         function onFileSelected(file) {
@@ -206,7 +228,7 @@ const app = createApp({
                 formData.append('confidence', 0.5)
                 formData.append('username', currentUser.value || '')
 
-                const res = await fetch('/api/detections/images', { method: 'POST', body: formData })
+                const res = await authFetch('/api/detections/images', { method: 'POST', body: formData })
                 const json = await res.json()
 
                 if (requestId !== detectionRequestId.value) return
@@ -240,7 +262,7 @@ const app = createApp({
                 formData.append('confidence', 0.5)
                 formData.append('username', currentUser.value || '')
 
-                const res = await fetch('/api/detections/videos/jobs', { method: 'POST', body: formData })
+                const res = await authFetch('/api/detections/videos/jobs', { method: 'POST', body: formData })
                 const json = await res.json()
 
                 if (requestId !== detectionRequestId.value) return
@@ -270,7 +292,7 @@ const app = createApp({
                 }
 
                 try {
-                    const res = await fetch(`/api/detections/videos/jobs/${jobId}`)
+                    const res = await authFetch(`/api/detections/videos/jobs/${jobId}`)
                     const json = await res.json()
                     if (json.code !== 0) {
                         throw new Error(json.message || '视频检测任务查询失败')
@@ -318,8 +340,8 @@ const app = createApp({
         }
 
         function applyDetectionResult(data, isImage) {
-            resultVideoUrl.value = data.result_video || ''
-            resultImageUrl.value = isImage && data.result_filename ? `/results/${data.result_filename}` : ''
+            resultVideoUrl.value = withUsername(data.result_video || '')
+            resultImageUrl.value = isImage && data.result_filename ? withUsername(`/results/${data.result_filename}`) : ''
             detectionTimeline.value = data.detection_timeline || detectionTimeline.value
             detections.value = data.detections || []
             safetyAdvice.value = data.safety_advice || []
@@ -368,7 +390,7 @@ const app = createApp({
         async function onDownloadLog() {
             try {
                 const userQuery = currentUser.value ? `?username=${encodeURIComponent(currentUser.value)}` : ''
-                const res = await fetch('/api/detections/history' + userQuery)
+                const res = await authFetch('/api/detections/history' + userQuery)
                 const json = await res.json()
                 if (json.code !== 0 || !json.data.items?.length) {
                     alert('暂无历史记录可导出')
@@ -434,7 +456,7 @@ const app = createApp({
         }
 
         async function onClearHistory() {
-            await fetch('/api/detections/history/clear', {
+            await authFetch('/api/detections/history/clear', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: currentUser.value || '' }),
@@ -470,7 +492,7 @@ const app = createApp({
         }
 
         async function requestSimulation(payload) {
-            const res = await fetch('/api/simulation/risk', {
+            const res = await authFetch('/api/simulation/risk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -511,7 +533,7 @@ const app = createApp({
 
         async function saveSimulationScenario(scenario) {
             try {
-                const res = await fetch('/api/simulation/scenarios', {
+                const res = await authFetch('/api/simulation/scenarios', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(scenario),
@@ -529,7 +551,7 @@ const app = createApp({
         async function deleteSimulationScenario(scenarioId) {
             if (!scenarioId || !confirm('确定删除这个自定义场景吗？')) return
             try {
-                const res = await fetch(`/api/simulation/scenarios/${encodeURIComponent(scenarioId)}`, {
+                const res = await authFetch(`/api/simulation/scenarios/${encodeURIComponent(scenarioId)}`, {
                     method: 'DELETE',
                 })
                 const json = await res.json()

@@ -217,6 +217,8 @@ class DatabaseServiceTest(unittest.TestCase):
         self.assertEqual(item["filename"], "road_001.jpg")
         self.assertEqual(item["detections"][0]["bbox"], [520, 360, 650, 700])
         self.assertEqual(item["detections"][0]["risk"]["level"], "high")
+        self.assertGreater(item["detections"][0]["risk"]["score"], 0)
+        self.assertEqual(item["detections"][0]["risk_score"], item["detections"][0]["risk"]["score"])
 
 
 if __name__ == "__main__":

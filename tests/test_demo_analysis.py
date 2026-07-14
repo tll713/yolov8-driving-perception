@@ -47,6 +47,17 @@ class DemoAnalysisServiceTest(unittest.TestCase):
         self.assertEqual(dashboard["average_inference_time_ms"], 100)
         self.assertEqual(dashboard["top_classes"][0]["class_name"], "car")
 
+    def test_build_dashboard_ignores_zero_inference_placeholders(self):
+        items = [
+            {"count": 1, "max_risk_level": "low", "inference_time_ms": 0, "detections": []},
+            {"count": 1, "max_risk_level": "low", "inference_time_ms": 80, "detections": []},
+            {"count": 1, "max_risk_level": "low", "inference_time_ms": 148989, "detections": []},
+        ]
+
+        dashboard = build_dashboard(items)
+
+        self.assertEqual(dashboard["average_inference_time_ms"], 80)
+
     def test_scene_summary_identifies_primary_risk_target(self):
         detections = [
             {

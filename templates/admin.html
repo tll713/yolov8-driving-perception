@@ -661,6 +661,16 @@
             window.location.href = '/login';
         }
 
+        function adminFetch(url, options) {
+            var nextOptions = Object.assign({}, options || {});
+            var headers = new Headers(nextOptions.headers || {});
+            if (adminUser && !headers.has('X-Username')) {
+                headers.set('X-Username', adminUser);
+            }
+            nextOptions.headers = headers;
+            return fetch(url, nextOptions);
+        }
+
         function switchTab(name, el) {
             document.querySelectorAll('.admin-section').forEach(function(s) { s.style.display = 'none'; });
             document.querySelectorAll('.admin-sidebar-item').forEach(function(t) { t.classList.remove('active'); });
@@ -673,7 +683,7 @@
         }
 
         function loadConfidence() {
-            fetch('/api/admin/confidence').then(function(r){return r.json()}).then(function(d){
+            adminFetch('/api/admin/confidence').then(function(r){return r.json()}).then(function(d){
                 if(d.code===0){ updateConfidenceUI(d.data.confidence); }
             });
         }
@@ -697,7 +707,7 @@
         function saveConfidence() {
             var val = parseFloat(document.getElementById('confidence-input').value);
             if (isNaN(val)) { alert('请输入有效数值'); return; }
-            fetch('/api/admin/confidence', {
+            adminFetch('/api/admin/confidence', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({confidence: val})
@@ -813,7 +823,7 @@
         }
 
         function loadStatus() {
-            fetch('/api/admin/system-status').then(function(r){return r.json()}).then(function(d){
+            adminFetch('/api/admin/system-status').then(function(r){return r.json()}).then(function(d){
                 if(d.code!==0) return;
                 var s = d.data;
                 var grid = document.getElementById('status-grid');
@@ -862,14 +872,15 @@
             'delete_simulation_scenario': '仿真场景删除',
             'simulation_risk': '仿真风险计算',
             'video_detection_job': '视频检测后台任务',
-            'flask_global': '系统全局异常',
+            'flask_global': '全局异常处理',
             'python_logger': 'Python 日志',
         };
 
         var allLogEntries = [];
         var groupByEnabled = true;
 
-        function sourceCn(source) {
+        function sourceCn(source, errorType) {
+            if (source === 'flask_global' && errorType === 'NotFound') return '接口地址异常';
             return SOURCE_CN[source] || source || '未知来源';
         }
 
@@ -907,6 +918,10 @@
 
         function msgToCn(msg) {
             if (!msg) return '-';
+            if (/检测接口未匹配/.test(msg)) return msg;
+            if (/结果文件不存在/.test(msg)) return msg;
+            if (/请求的接口不存在/.test(msg)) return msg.replace('请求的接口不存在', '用户访问了不存在的接口地址');
+            if (/请求的资源不存在/.test(msg)) return msg.replace('请求的资源不存在', '用户请求的资源不存在');
             // 常见错误信息 → 中文（按优先级排列，先匹配精确模式）
             var patterns = [
                 // 用户操作类
@@ -962,11 +977,20 @@
             return result;
         }
 
+        function normalizeLogMessage(msg) {
+            if (!msg) return '';
+            if (/检测接口未匹配/.test(msg)) return msg.replace(/：[^；]+/, '');
+            if (/请求的接口不存在/.test(msg)) return msg.replace(/：[^；]+/, '');
+            if (/请求的资源不存在/.test(msg)) return msg.replace(/：[^；]+/, '');
+            if (/结果文件不存在/.test(msg)) return msg.replace(/：[^；]+/, '');
+            return msg;
+        }
+
         function groupLogs(items) {
-            // 按 (source, error_type, status_code, message) 分组去重
+            // 按同一秒、同类错误分组，避免同一时刻重复报多行。
             var groups = {};
             items.forEach(function(item) {
-                var key = (item.source || '') + '||' + (item.error_type || '') + '||' + (item.status_code || '') + '||' + (item.message || '');
+                var key = (item.created_at || '') + '||' + (item.source || '') + '||' + (item.error_type || '') + '||' + (item.status_code || '') + '||' + normalizeLogMessage(item.message || '');
                 if (!groups[key]) {
                     groups[key] = {
                         source: item.source,
@@ -983,7 +1007,7 @@
                     };
                 }
                 var g = groups[key];
-                g.count++;
+                g.count += Number(item.repeat_count || 1);
                 g.ids.push(item.id);
                 if (item.username && g.usernames.indexOf(item.username) === -1) {
                     g.usernames.push(item.username);
@@ -1063,7 +1087,7 @@
 
                 return '<tr style="cursor:pointer;" onclick="toggleLogDetail(\'' + expandId + '\', this)">' +
                     '<td><span style="font-size:0.7rem;color:var(--text-muted);">▼</span></td>' +
-                    '<td><strong>' + sourceCn(g.source) + '</strong></td>' +
+                    '<td><strong>' + sourceCn(g.source, g.error_type) + '</strong></td>' +
                     '<td><span class="admin-badge ' + lvlCls + '">' + (g.level || '-') + '</span></td>' +
                     '<td class="admin-log-msg" title="' + escapeHtml(g.message || '') + '&#10;请求路径: ' + escapeHtml(pathDisplay) + '">' + msgToCn(g.message) + '</td>' +
                     '<td>' + userDisplay + '</td>' +
@@ -1110,7 +1134,7 @@
             return items.map(function(item) {
                 return {
                     source: item.source, error_type: item.error_type, status_code: item.status_code,
-                    message: item.message, level: item.level, count: 1,
+                    message: item.message, level: item.level, count: Number(item.repeat_count || 1),
                     usernames: item.username ? [item.username] : [],
                     firstTime: item.created_at, lastTime: item.created_at,
                     ids: [item.id], request_paths: item.request_path ? [item.request_path] : [],
@@ -1130,7 +1154,7 @@
             if (ids.length === 0) return;
             if (!confirm('确认删除 ' + ids.length + ' 条错误日志？')) return;
             var promises = ids.map(function(id) {
-                return fetch('/api/admin/error-logs/' + id, { method: 'DELETE' }).then(function(r) { return r.json(); });
+                return adminFetch('/api/admin/error-logs/' + id, { method: 'DELETE' }).then(function(r) { return r.json(); });
             });
             Promise.all(promises).then(function() {
                 var idSet = {};
@@ -1142,7 +1166,7 @@
 
         function clearAllLogs() {
             if (!confirm('确认清空全部错误日志？此操作不可撤销。')) return;
-            fetch('/api/admin/error-logs', { method: 'DELETE' }).then(function(r) { return r.json(); }).then(function(d) {
+            adminFetch('/api/admin/error-logs', { method: 'DELETE' }).then(function(r) { return r.json(); }).then(function(d) {
                 if (d.code === 0) {
                     allLogEntries = [];
                     renderLogs();
@@ -1182,7 +1206,7 @@
         }
 
         function apiJson(url, options) {
-            return fetch(url, options || {}).then(function(r) {
+            return adminFetch(url, options || {}).then(function(r) {
                 return r.json().then(function(data) {
                     if (!r.ok && data.code === 0) data.code = r.status;
                     return data;

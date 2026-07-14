@@ -4,6 +4,7 @@ import traceback
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 
 from backend.api_contract import API_ENDPOINTS, build_error_response, build_success_response
 from backend.config import (
@@ -122,12 +123,33 @@ def create_app():
         except Exception:
             pass
         # 4) 自定义请求头（前端可设置）
-        username = (request.headers.get("X-Username") or "").strip()
+        username = (
+            request.headers.get("X-Username")
+            or request.headers.get("X-Current-User")
+            or request.headers.get("X-Admin-User")
+            or ""
+        ).strip()
         return username
+
+    def _not_found_message():
+        method = request.method
+        path = request.path
+
+        if path.startswith("/results/"):
+            return f"结果文件不存在：{method} {path}；可能原因：检测结果文件已被删除、尚未生成或历史记录引用了旧文件"
+
+        if path.startswith("/api/detections"):
+            return f"检测接口未匹配：{method} {path}；可能原因：未上传文件就点击开始检测，或前端请求地址配置错误"
+
+        if path.startswith("/api/"):
+            return f"请求的接口不存在：{method} {path}；可能原因：前端接口地址配置错误或页面资源已过期"
+
+        return f"请求的资源不存在：{method} {path}"
 
     # ---- 全局错误处理器 ----
     @app.errorhandler(404)
     def handle_404(exc):
+        message = _not_found_message()
         try:
             from backend.services.error_log_service import log_error
 
@@ -135,7 +157,7 @@ def create_app():
                 level="WARN",
                 source="flask_global",
                 error_type="NotFound",
-                message=f"请求的接口不存在：{request.method} {request.path}",
+                message=message,
                 request_path=request.path,
                 request_method=request.method,
                 username=_extract_request_username(),
@@ -143,7 +165,7 @@ def create_app():
             )
         except Exception:
             pass
-        return jsonify(build_error_response(f"请求的资源不存在（{request.method} {request.path}）", 404)), 404
+        return jsonify(build_error_response(message, 404)), 404
 
     @app.errorhandler(500)
     def handle_500(exc):
@@ -167,6 +189,11 @@ def create_app():
 
     @app.errorhandler(Exception)
     def handle_exception(exc):
+        if isinstance(exc, HTTPException):
+            status_code = exc.code or 500
+            if status_code == 404:
+                return handle_404(exc)
+
         try:
             from backend.services.error_log_service import log_error
 
@@ -205,7 +232,7 @@ def create_app():
     def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type,X-Username,X-Current-User,X-Admin-User"
         return response
 
     @app.get("/")

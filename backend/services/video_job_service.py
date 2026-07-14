@@ -75,6 +75,8 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence,
             "max_risk_level": payload.get("frame_max_risk_level", "low"),
             "max_risk_score": payload.get("frame_max_risk_score", 0),
             "risk_counts": payload.get("frame_risk_counts", {}),
+            "inference_time_ms": payload.get("frame_inference_time_ms", 0),
+            "average_inference_time_ms": payload.get("average_frame_inference_time_ms", 0),
         }
 
         with _LOCK:
@@ -98,6 +100,8 @@ def _run_video_detection_job(job_id, upload_path, original_filename, confidence,
                         "max_risk_level": payload.get("frame_max_risk_level", "low"),
                         "max_risk_score": payload.get("frame_max_risk_score", 0),
                         "risk_counts": payload.get("frame_risk_counts", {}),
+                        "inference_time_ms": payload.get("frame_inference_time_ms", 0),
+                        "average_inference_time_ms": payload.get("average_frame_inference_time_ms", 0),
                     },
                     "lane_analysis": payload.get("lane_analysis"),
                     "detections": payload["all_detections"],

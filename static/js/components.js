@@ -462,7 +462,7 @@ const StatsGrid = {
         <div class="stat-card"><div class="stat-content"><span class="stat-label">置信度阈值</span><span class="stat-number">{{ confidence != null ? confidence.toFixed(2) : '-' }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">检测目标数</span><span class="stat-number">{{ totalCount }}</span></div></div>
         <div class="stat-card"><div class="stat-content"><span class="stat-label">整体风险</span><span class="stat-number" :class="riskClass">{{ overallRisk }}</span></div></div>
-        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理耗时</span><span class="stat-number">{{ inferenceTime }}</span></div></div>
+        <div class="stat-card"><div class="stat-content"><span class="stat-label">推理耗时/帧</span><span class="stat-number">{{ inferenceTime }}</span></div></div>
 
         <div class="stat-card stat-card-wide">
             <div class="stat-content">
@@ -506,6 +506,20 @@ const RiskAnalysisPanel = {
     methods: {
         riskClass(level) { return RISK_STYLE_MAP[level]?.cls || 'risk-low' },
         riskLabel(level) { return RISK_STYLE_MAP[level]?.label || level || '低风险' },
+        riskScore(detection) {
+            const value = detection?.risk?.score ?? detection?.risk_score
+            return Number.isFinite(Number(value)) ? Number(value) : 0
+        },
+        riskReason(detection) {
+            return detection?.risk?.reason || detection?.risk_reason || detection?.risk?.message || detection?.risk_message || '-'
+        },
+        formatInferenceTime(value) {
+            const time = Number(value)
+            return Number.isFinite(time) && time > 0 && time <= 10000 ? `${time} ms` : '-'
+        },
+        inferenceTimeLabel(item) {
+            return item?.type === 'video' ? '平均帧耗时' : '推理耗时'
+        },
         async loadHistory() {
             try {
                 const currentUser = localStorage.getItem('currentUser') || ''
@@ -537,8 +551,8 @@ const RiskAnalysisPanel = {
                     <td>${d.class_name_cn || d.class_name || '-'}</td>
                     <td>${((d.confidence || 0) * 100).toFixed(1)}%</td>
                     <td>${d.risk?.level || d.risk_level || '-'}</td>
-                    <td>${d.risk?.score || d.risk_score || 0}</td>
-                    <td>${d.risk?.reason || d.risk_reason || '-'}</td>
+                    <td>${this.riskScore(d)}</td>
+                    <td>${this.riskReason(d)}</td>
                 </tr>
             `).join('')
             const riskMap = { high: '高风险', medium: '中风险', info: '交通提示', low: '低风险' }
@@ -570,7 +584,7 @@ const RiskAnalysisPanel = {
                         <div class="card"><span>检测目标</span><strong>${item.count || item.total_objects || 0}</strong></div>
                         <div class="card"><span>整体风险</span><strong>${overallRisk}</strong></div>
                         <div class="card"><span>置信度</span><strong>${item.confidence != null ? item.confidence.toFixed(2) : '-'}</strong></div>
-                        <div class="card"><span>推理耗时</span><strong>${item.inference_time_ms || '-'} ms</strong></div>
+                        <div class="card"><span>${this.inferenceTimeLabel(item)}</span><strong>${this.formatInferenceTime(item.inference_time_ms)}</strong></div>
                     </div>
                     <h2>目标明细</h2>
                     <table>
@@ -600,7 +614,7 @@ const RiskAnalysisPanel = {
                         <span v-else-if="(item.max_risk_level || 'low') === 'info'" class="risk-badge risk-info">交通提示</span>
                         <span v-else class="risk-badge risk-low">低风险</span>
                     </span>
-                    <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '?' : '?' }}</span>
+                    <span class="risk-toggle-icon">{{ isItemExpanded(idx) ? '▲' : '▼' }}</span>
                     <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click.stop="exportItemReport(item)">生成报告</button>
                 </div>
                 <div v-show="isItemExpanded(idx)" class="risk-time-body">
@@ -613,14 +627,15 @@ const RiskAnalysisPanel = {
                             </div>
                             <div class="metric-row">
                                 <span>置信度 {{ item.confidence != null ? item.confidence.toFixed(2) : '-' }}</span>
-                                <span>耗时 {{ item.inference_time_ms || '-' }} ms</span>
+                                <span>{{ inferenceTimeLabel(item) }} {{ formatInferenceTime(item.inference_time_ms) }}</span>
                             </div>
                             <div v-if="item.detections?.length" class="risk-det-sub">
                                 <div class="risk-det-item" v-for="(d, di) in item.detections" :key="di">
                                     <strong>{{ d.class_name_cn || d.class_name }}</strong>
                                     <span>{{ ((d.confidence || 0) * 100).toFixed(1) }}%</span>
                                     <span :class="riskClass(d.risk?.level || d.risk_level)">{{ riskLabel(d.risk?.level || d.risk_level) }}</span>
-                                    <span class="risk-det-reason">{{ d.risk?.reason || d.risk_reason || '' }}</span>
+                                    <span>风险分 {{ riskScore(d) }}</span>
+                                    <span class="risk-det-reason">{{ riskReason(d) }}</span>
                                 </div>
                             </div>
                         </article>
@@ -2012,7 +2027,7 @@ const SimulationPanel = {
             </label>
             <div class="sim-toolbar-actions">
                 <button class="btn btn-primary sim-generate" :disabled="isSimulating" @click="$emit('run')">
-                    <span v-if="!isSimulating">?</span>{{ isSimulating ? '计算中...' : '生成仿真' }}
+                    <span v-if="!isSimulating">▶</span>{{ isSimulating ? '计算中...' : '生成仿真' }}
                 </button>
                 <button class="btn btn-secondary" :disabled="isComparing" @click="$emit('compare')">
                     {{ isComparing ? '对比中...' : 'AEB 对比' }}
@@ -2086,8 +2101,8 @@ const SimulationPanel = {
                 </div>
 
                 <div class="sim-playback">
-                    <button class="sim-icon-btn" title="重新播放" @click="restartPlayback">?</button>
-                    <button class="sim-play-btn" :title="isPlaying ? '暂停' : '播放'" @click="togglePlayback">{{ isPlaying ? 'Ⅱ' : '?' }}</button>
+                    <button class="sim-icon-btn" title="重新播放" @click="restartPlayback">↻</button>
+                    <button class="sim-play-btn" :title="isPlaying ? '暂停' : '播放'" @click="togglePlayback">{{ isPlaying ? 'Ⅱ' : '▶' }}</button>
                     <span>{{ frame?.time_sec.toFixed(2) }}s</span>
                     <input type="range" min="0" :max="timeline.length - 1" :value="frameIndex" @input="seekPlayback($event.target.value)">
                     <span>{{ result.duration_sec.toFixed(2) }}s</span>
@@ -2181,6 +2196,12 @@ const SimulationPanel = {
 
 const DashboardPanel = {
     props: { dashboard: Object },
+    methods: {
+        formatAverageTime(value) {
+            const time = Number(value)
+            return Number.isFinite(time) && time > 0 && time <= 10000 ? `${time} ms` : '-'
+        },
+    },
     template: `
     <section class="system-panel">
         <div class="section-header"><h3>数据统计看板</h3><span>recent history</span></div>
@@ -2189,7 +2210,7 @@ const DashboardPanel = {
             <div><span>累计目标</span><strong>{{ dashboard?.total_objects || 0 }}</strong></div>
             <div><span>高风险记录</span><strong>{{ dashboard?.high_risk_records || 0 }}</strong></div>
             <div><span>高风险占比</span><strong>{{ Math.round((dashboard?.high_risk_ratio || 0) * 100) }}%</strong></div>
-            <div><span>平均耗时</span><strong>{{ dashboard?.average_inference_time_ms || 0 }} ms</strong></div>
+            <div><span>平均帧耗时</span><strong>{{ formatAverageTime(dashboard?.average_inference_time_ms) }}</strong></div>
             <div><span>常见目标</span><strong>{{ dashboard?.top_classes?.[0]?.class_name || '-' }}</strong></div>
         </div>
         <div class="class-tags dashboard-tags" v-if="dashboard?.top_classes?.length">
@@ -2316,7 +2337,7 @@ const HistoryPanel = {
                         </div>
                         <div class="ph-thumb ph-thumb-clickable ph-thumb-video" v-else-if="isVideo(item) && item.result_video" @click="viewMedia(item)">
                             <video :src="item.result_video + '#t=0.5'" muted preload="metadata"></video>
-                            <div class="ph-play-icon">?</div>
+                            <div class="ph-play-icon" aria-label="播放视频"></div>
                             <div class="ph-thumb-overlay">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             </div>

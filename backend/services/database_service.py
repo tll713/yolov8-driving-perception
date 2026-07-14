@@ -2,7 +2,7 @@ from pathlib import Path
 from decimal import Decimal
 
 from backend.config import BASE_DIR, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
-from risk import RISK_LABELS
+from risk import RISK_LABELS, assess_detection
 
 
 RISK_ORDER = {"low": 1, "info": 2, "medium": 3, "high": 4}
@@ -425,6 +425,8 @@ def list_detection_history(limit=50, username=None):
                     r.`结果路径` AS result_path,
                     r.`模型名称` AS model_name,
                     r.`置信度阈值` AS confidence_threshold,
+                    r.`图像宽度` AS image_width,
+                    r.`图像高度` AS image_height,
                     r.`目标总数` AS total_objects,
                     r.`最高风险等级` AS max_risk_level,
                     r.`推理耗时毫秒` AS inference_time_ms,
@@ -439,7 +441,12 @@ def list_detection_history(limit=50, username=None):
             )
             rows = cursor.fetchall()
             for row in rows:
-                row["detections"] = _fetch_record_detections(cursor, row.get("id"))
+                row["detections"] = _fetch_record_detections(
+                    cursor,
+                    row.get("id"),
+                    image_width=_to_int(row.get("image_width")),
+                    image_height=_to_int(row.get("image_height")),
+                )
     finally:
         conn.close()
 
@@ -454,6 +461,8 @@ def list_detection_history(limit=50, username=None):
             "result_path": row.get("result_path"),
             "model_name": row.get("model_name"),
             "confidence": _to_float(row.get("confidence_threshold")),
+            "image_width": _to_int(row.get("image_width")),
+            "image_height": _to_int(row.get("image_height")),
             "count": _to_int(row.get("total_objects")),
             "max_risk_level": row.get("max_risk_level"),
             "inference_time_ms": _to_int(row.get("inference_time_ms")),
@@ -607,14 +616,19 @@ def get_detection_result(record_id):
             if record is None:
                 return None
 
-            detections = _fetch_record_detections(cursor, record_id)
+            detections = _fetch_record_detections(
+                cursor,
+                record_id,
+                image_width=_to_int(record.get("image_width")),
+                image_height=_to_int(record.get("image_height")),
+            )
     finally:
         conn.close()
 
     return _record_payload(record, detections)
 
 
-def _fetch_record_detections(cursor, record_id):
+def _fetch_record_detections(cursor, record_id, image_width=0, image_height=0):
     cursor.execute(
         f"""
         SELECT
@@ -641,8 +655,9 @@ def _fetch_record_detections(cursor, record_id):
         {"record_id": record_id},
     )
     rows = cursor.fetchall()
-    detections = [
-        {
+    detections = []
+    for row in rows:
+        detection = {
             "object_id": row.get("id"),
             "class_name": row.get("class_name"),
             "class_name_cn": row.get("class_name_cn"),
@@ -656,12 +671,32 @@ def _fetch_record_detections(cursor, record_id):
             "bbox_area": _to_int(row.get("bbox_area")),
             "center_x": _to_int(row.get("center_x")),
             "center_y": _to_int(row.get("center_y")),
-            "risk": {
-                "level": _risk_level(row.get("risk_level")),
-                "message": row.get("risk_message") or "",
-                "reason": row.get("risk_reason") or "",
-            },
         }
-        for row in rows
-    ]
+        risk = assess_detection(detection, image_width, image_height) if image_width and image_height else {}
+        if row.get("risk_level"):
+            risk["level"] = _risk_level(row.get("risk_level"))
+        if row.get("risk_message"):
+            risk["message"] = row.get("risk_message")
+        if row.get("risk_reason"):
+            risk["reason"] = row.get("risk_reason")
+
+        detection["risk"] = {
+            "level": risk.get("level", _risk_level(row.get("risk_level"))),
+            "score": _to_int(risk.get("score")),
+            "class_risk_score": _to_int(risk.get("class_risk_score")),
+            "confidence_score": _to_int(risk.get("confidence_score")),
+            "distance_score": _to_int(risk.get("distance_score")),
+            "position_score": _to_int(risk.get("position_score")),
+            "lane_overlap": _to_float(risk.get("lane_overlap")),
+            "message": risk.get("message") or row.get("risk_message") or "",
+            "reason": risk.get("reason") or row.get("risk_reason") or "",
+        }
+        detection["risk_level"] = detection["risk"]["level"]
+        detection["risk_score"] = detection["risk"]["score"]
+        detection["risk_message"] = detection["risk"]["message"]
+        detection["risk_reason"] = detection["risk"]["reason"]
+        detection["distance_score"] = detection["risk"]["distance_score"]
+        detection["position_score"] = detection["risk"]["position_score"]
+        detection["lane_overlap"] = detection["risk"]["lane_overlap"]
+        detections.append(detection)
     return detections

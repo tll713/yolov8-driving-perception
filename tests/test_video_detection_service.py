@@ -1,3 +1,4 @@
+import importlib.util
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -5,6 +6,7 @@ from unittest.mock import Mock, patch
 from backend.services.detection_service import detect_video_file
 
 
+@unittest.skipIf(importlib.util.find_spec("cv2") is None, "OpenCV is not installed in this runtime")
 class VideoDetectionServiceTest(unittest.TestCase):
     def test_video_file_detection_updates_timeline_for_each_processed_frame(self):
         upload_path = Path("uploads/road.mp4")
@@ -40,7 +42,10 @@ class VideoDetectionServiceTest(unittest.TestCase):
             patch("cv2.putText"),
             patch("backend.services.detection_service.get_model", return_value=model),
             patch("backend.services.detection_service._save_to_database"),
-            patch("backend.services.detection_service.append_history"),
+            patch(
+                "backend.services.detection_service.time.perf_counter",
+                side_effect=[0, 0.01, 1, 1.02, 2, 2.03],
+            ),
         ):
             result = detect_video_file(upload_path, "road.mp4", progress_callback=progress_items.append)
 
@@ -48,6 +53,8 @@ class VideoDetectionServiceTest(unittest.TestCase):
         self.assertEqual(writer.write.call_count, 3)
         self.assertEqual([item["frame_index"] for item in progress_items], [0, 1, 2])
         self.assertEqual([item["timestamp_sec"] for item in progress_items], [0, 0.04, 0.08])
+        self.assertEqual([item["frame_inference_time_ms"] for item in progress_items], [10, 20, 30])
+        self.assertEqual(result["inference_time_ms"], 20)
         self.assertEqual(result["processed_frame_count"], 3)
 
 

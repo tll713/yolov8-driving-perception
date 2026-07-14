@@ -86,6 +86,36 @@ def _next_file_id(logs):
     return max((entry.get("id", 0) for entry in logs), default=0) + 1
 
 
+def _collapse_same_second_duplicates(logs):
+    """同一秒内完全相同的错误只返回一条，保留重复次数供前端展示。"""
+    collapsed = []
+    seen = {}
+
+    for entry in logs:
+        key = (
+            entry.get("created_at") or "",
+            entry.get("level") or "",
+            entry.get("source") or "",
+            entry.get("error_type") or "",
+            entry.get("message") or "",
+            entry.get("request_path") or "",
+            entry.get("request_method") or "",
+            entry.get("username") or "",
+            entry.get("status_code"),
+        )
+        existing = seen.get(key)
+        if existing is None:
+            item = dict(entry)
+            item["repeat_count"] = int(item.get("repeat_count") or 1)
+            seen[key] = item
+            collapsed.append(item)
+            continue
+
+        existing["repeat_count"] = int(existing.get("repeat_count") or 1) + 1
+
+    return collapsed
+
+
 def log_error(
     level="ERROR",
     source="system",
@@ -149,13 +179,13 @@ def log_error(
 def get_error_logs(limit=200):
     """获取错误日志列表 —— DB 优先，DB 不可用时返回文件数据"""
     try:
-        return _db_list_error_logs(limit=limit)
+        return _collapse_same_second_duplicates(_db_list_error_logs(limit=limit))
     except Exception:
         pass
 
     try:
         logs = _read_file_logs()
-        return list(reversed(logs[-limit:]))
+        return _collapse_same_second_duplicates(list(reversed(logs[-limit:])))
     except Exception:
         return []
 
